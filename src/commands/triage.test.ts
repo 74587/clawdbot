@@ -38,6 +38,7 @@ const mocks = vi.hoisted(() => ({
   runUpdateRepairLoop: vi.fn(),
   agentExecCommand: vi.fn(),
   resolveExecutablePath: vi.fn(),
+  runUtf8CommandWithTimeout: vi.fn(),
   spawn: vi.fn(),
 }));
 
@@ -59,6 +60,11 @@ vi.mock("./doctor-lint.js", () => ({
 vi.mock("../infra/executable-path.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../infra/executable-path.js")>()),
   resolveExecutablePath: mocks.resolveExecutablePath,
+}));
+
+vi.mock("../process/exec.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../process/exec.js")>()),
+  runUtf8CommandWithTimeout: mocks.runUtf8CommandWithTimeout,
 }));
 
 vi.mock("../cli/gateway-rpc.js", () => ({
@@ -100,6 +106,14 @@ describe("triageCommand", () => {
       finalValidation: { ok: true, score: 0, summary: "Doctor lint reports no errors." },
     });
     mocks.resolveExecutablePath.mockReturnValue(undefined);
+    mocks.runUtf8CommandWithTimeout.mockImplementation(async (argv, options) => {
+      if (argv.at(-1) === "--help") {
+        return { stdout: "--safe-mode", stderr: "", code: 0, termination: "exit" };
+      }
+      const actual =
+        await vi.importActual<typeof import("../process/exec.js")>("../process/exec.js");
+      return await actual.runUtf8CommandWithTimeout(argv, options);
+    });
     mocks.spawn.mockImplementation(() => {
       const child = new EventEmitter();
       queueMicrotask(() => child.emit("exit", 0, null));
@@ -926,7 +940,7 @@ describe("triageCommand", () => {
       expect(prompt).toContain('Repair A&B at 100%: ! "quoted"');
       expect(prompt).toContain("\n");
       expect(command).toBe(nodeSource === "current" ? currentNode : pathNode);
-      expect(argv).toEqual([entrypoint, prompt]);
+      expect(argv).toEqual([entrypoint, "--safe-mode", prompt]);
       expect(options?.stdio).toBe("inherit");
       expect(options?.shell).not.toBe(true);
       expect(options?.windowsHide).not.toBe(true);
@@ -998,7 +1012,7 @@ describe("triageCommand", () => {
     const promptPath = String(runtime.log.mock.calls[0]?.[0]).replace("Debugging prompt: ", "");
     expect(mocks.spawn).toHaveBeenCalledExactlyOnceWith(
       `/usr/local/bin/${agent}`,
-      [await fs.readFile(promptPath, "utf8")],
+      [...(agent === "claude" ? ["--safe-mode"] : []), await fs.readFile(promptPath, "utf8")],
       {
         stdio: "inherit",
         env: {

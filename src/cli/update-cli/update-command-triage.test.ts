@@ -627,6 +627,7 @@ describe("update failure triage boundary", () => {
             path.join(bin, "claude"),
             `#!${process.execPath}\n` +
               `const fs = require("node:fs");\n` +
+              `if (process.argv.includes("--help")) { process.stdout.write("--safe-mode\\n"); process.exit(0); }\n` +
               `fs.appendFileSync(${JSON.stringify(receiptPath)}, JSON.stringify({\n` +
               `  cwd: fs.realpathSync(process.cwd()),\n` +
               `  home: process.env.HOME,\n` +
@@ -637,7 +638,7 @@ describe("update failure triage boundary", () => {
               `  nodeOptions: process.env.NODE_OPTIONS,\n` +
               `  updateInProgress: process.env.OPENCLAW_UPDATE_IN_PROGRESS,\n` +
               `  released: fs.existsSync(${JSON.stringify(releasedPath)}),\n` +
-              `  prompt: process.argv[2],\n` +
+              `  prompt: process.argv.at(-1),\n` +
               `}) + "\\n");\n` +
               `process.exitCode = ${agentExitCode};\n`,
             { mode: 0o700 },
