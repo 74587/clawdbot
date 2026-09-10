@@ -1,16 +1,13 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import {
-  AsyncWorkScope,
-  captureAsyncWorkTracker,
-  getAsyncWorkSignal,
-} from "../shared/async-work-scope.js";
-import { createDeferredCore } from "../shared/deferred.js";
-import type { PreparedModelRuntimeLease } from "./prepared-model-runtime.js";
+import { AsyncWorkScope, captureAsyncWorkTracker, getAsyncWorkSignal } from "./async-work-scope.js";
+import { createDeferredCore } from "./deferred.js";
 
-/** Retains isolated completion resources through admitted setup and transport cleanup. */
-export async function runWithIsolatedCompletionResources<T>(
+type AsyncWorkResources = { release: () => void | Promise<void> };
+
+/** Returns the logical result while retaining resources through owned cleanup. */
+export async function runWithAsyncWorkResources<T>(
   run: (
-    acceptLease: (lease: PreparedModelRuntimeLease) => void,
+    onAcquired: (resources: AsyncWorkResources) => void,
     captureWorkContext: () => void,
   ) => Promise<T>,
 ): Promise<T> {
@@ -19,7 +16,7 @@ export async function runWithIsolatedCompletionResources<T>(
   const parentSignal = getAsyncWorkSignal();
   void trackOwner(async () => {
     const work = new AsyncWorkScope();
-    let lease: PreparedModelRuntimeLease | undefined;
+    let resources: AsyncWorkResources | undefined;
     let runInContext = work.run(() => AsyncLocalStorage.snapshot());
     const closeFromParent = () => runInContext(() => work.beginClose(parentSignal?.reason));
     parentSignal?.addEventListener("abort", closeFromParent, { once: true });
@@ -31,7 +28,7 @@ export async function runWithIsolatedCompletionResources<T>(
         await work.track(() =>
           run(
             (acquired) => {
-              lease = acquired;
+              resources = acquired;
             },
             () => {
               runInContext = AsyncLocalStorage.snapshot();
@@ -49,7 +46,7 @@ export async function runWithIsolatedCompletionResources<T>(
         );
       } finally {
         parentSignal?.removeEventListener("abort", closeFromParent);
-        lease?.release();
+        await resources?.release();
       }
     }
   }).catch(result.reject);
