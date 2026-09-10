@@ -148,9 +148,12 @@ describe("Cloud Workers mutation requests", () => {
       provider.append(page);
       document.body.append(provider);
       try {
-        await waitForFast(() =>
-          expect(page.querySelectorAll(".settings-row code")).toHaveLength(2),
-        );
+        await waitForFast(() => {
+          const profiles = [...page.querySelectorAll(".settings-section")].find((section) =>
+            section.querySelector("h2")?.textContent?.trim().startsWith("Profiles"),
+          );
+          expect(profiles?.querySelectorAll(".settings-row code")).toHaveLength(2);
+        });
         const row = expectDefined(
           [...page.querySelectorAll(".settings-row")].find(
             (entry) => entry.querySelector("code")?.textContent === "pending",
@@ -197,6 +200,21 @@ describe("Cloud Workers mutation requests", () => {
           const setup = expectDefined(page.querySelector("textarea"), "Setup editor");
           setup.value = "";
           setup.dispatchEvent(new Event("input", { bubbles: true }));
+          await waitForFast(() => expect(actionButton(page, "Save").disabled).toBe(false));
+          actionButton(page, "Save").click();
+          await waitForFast(() =>
+            expect(page.textContent).toContain(
+              "Enter a setup command or clear the setup environment names.",
+            ),
+          );
+          expect(patches).toHaveLength(0);
+          const setupEnv = expectDefined(
+            page.querySelector<HTMLInputElement>('input[aria-label="Setup environment names"]'),
+            "Setup environment names editor",
+          );
+          expect(setupEnv.value).toBe("QA_WORKER_FLAG");
+          setupEnv.value = "";
+          setupEnv.dispatchEvent(new Event("input", { bubbles: true }));
           await waitForFast(() => expect(actionButton(page, "Save").disabled).toBe(false));
           actionButton(page, "Save").click();
         }
