@@ -24,7 +24,11 @@ export {
 
 type SummarizeTextDeps = {
   completeWithPreparedSimpleCompletionModel: typeof import("../agents/simple-completion-runtime.js").completeWithPreparedSimpleCompletionModel;
-  prepareSimpleCompletionModel: typeof import("../agents/simple-completion-runtime.js").prepareSimpleCompletionModel;
+  prepareSimpleCompletionModel: (
+    params: import("../agents/simple-completion-runtime.js").PrepareSimpleCompletionModelParams,
+  ) => ReturnType<
+    typeof import("../agents/simple-completion-runtime.js").prepareSimpleCompletionModel
+  >;
   requireApiKey: typeof import("../agents/model-auth.js").requireApiKey;
 };
 
