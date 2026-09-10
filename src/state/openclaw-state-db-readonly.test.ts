@@ -1,14 +1,21 @@
 import fs from "node:fs";
+import fsp from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { hasNodeErrorCode } from "../infra/path-guards.js";
 import * as sqliteReadOnly from "../infra/sqlite-readonly-location.js";
+import { createDeferredCore } from "../shared/deferred.js";
+import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { withTempDir } from "../test-utils/temp-dir.js";
 import {
   clearOpenClawDatabaseQuarantine,
   recordOpenClawDatabaseQuarantine,
 } from "./openclaw-quarantine-store.js";
-import { recordOpenClawStateDatabaseOpenFailure } from "./openclaw-state-db-cache.js";
+import {
+  acquireOpenClawStateDatabaseFileExclusion,
+  recordOpenClawStateDatabaseOpenFailure,
+} from "./openclaw-state-db-cache.js";
 import {
   isArtifactPreservingStateRead,
   withExistingOpenClawStateDatabaseArtifactPreservingReadOnly,
@@ -47,14 +54,14 @@ describe.each(["admission", "explicit", "async"] as const)("%s read-only state r
   it("reads a consolidated WAL database without creating source sidecars", async () => {
     await withTempDir("openclaw-state-readonly-sidecars-", async (stateDir) => {
       const options = createOptions(stateDir);
-      fs.mkdirSync(path.dirname(options.path), { recursive: true });
+      await fsp.mkdir(path.dirname(options.path), { recursive: true });
       const writer = new DatabaseSync(options.path);
       writer.exec(
         "PRAGMA journal_mode = WAL; CREATE TABLE held(value TEXT); INSERT INTO held VALUES ('committed');",
       );
       writer.close();
-      const before = fs.readFileSync(options.path);
-      expect(fs.readdirSync(path.dirname(options.path))).toEqual(["openclaw.sqlite"]);
+      const before = await fsp.readFile(options.path);
+      expect(await fsp.readdir(path.dirname(options.path))).toEqual(["openclaw.sqlite"]);
 
       expect(
         await readState(({ db }) => {
@@ -197,5 +204,67 @@ it("keeps missing and non-missing filesystem failures distinct for async reads",
       }),
     ).rejects.toMatchObject({ code: "ENOTDIR" });
     expect(operation).not.toHaveBeenCalled();
+  });
+});
+
+it("reads under its live mutation owner but refuses an unrelated caller", async () => {
+  await withOpenClawTestState({ label: "owned-ledger-read" }, async ({ env }) => {
+    const options = { env };
+    const initial = openOpenClawStateDatabase(options);
+    initial.db.exec("CREATE TABLE held(value TEXT); INSERT INTO held VALUES ('original')");
+    const pathname = initial.path;
+    const owner = acquireOpenClawStateDatabaseFileExclusion(pathname);
+    const entered = createDeferredCore();
+    const resume = createDeferredCore();
+    const read = () =>
+      withExistingOpenClawStateDatabaseArtifactPreservingReadOnlyAsync(
+        ({ db }) => db.prepare("SELECT value FROM held").get()?.value,
+        options,
+      );
+    const family = () =>
+      Promise.all(
+        ["", "-wal", "-shm"].map(async (suffix) => {
+          try {
+            return await fsp.readFile(pathname + suffix);
+          } catch (error) {
+            if (hasNodeErrorCode(error, "ENOENT")) {
+              return null;
+            }
+            throw error;
+          }
+        }),
+      );
+    let running: Promise<void> | undefined;
+    try {
+      const before = await family();
+      running = owner.mutate(owner.assertCurrent, async () => {
+        expect(await read()).toBe("original");
+        expect(await family()).toEqual(before);
+        entered.resolve();
+        await resume.promise;
+        owner.assertCurrent();
+        const opened = openOpenClawStateDatabase(options);
+        opened.db.exec("BEGIN; UPDATE held SET value = 'uncommitted'");
+        try {
+          await expect(read()).rejects.toThrow(/outside a transaction/);
+          expect(opened.db.isTransaction).toBe(true);
+          expect(opened.db.prepare("SELECT value FROM held").get()?.value).toBe("uncommitted");
+        } finally {
+          opened.db.exec("ROLLBACK");
+        }
+        expect(await read()).toBe("original");
+      });
+      await Promise.race([entered.promise, running]);
+      await expect(read()).rejects.toThrow(/state-handles/);
+      expect(await family()).toEqual(before);
+    } finally {
+      resume.resolve();
+      try {
+        await running;
+      } finally {
+        owner.release();
+      }
+    }
+    expect(await read()).toBe("original");
   });
 });
