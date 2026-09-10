@@ -2717,7 +2717,6 @@ src/gateway/mcp-app-operations.ts	3
 src/gateway/mcp-app-reconstruction.ts	3
 src/gateway/mcp-grant-store.ts	2
 src/gateway/mcp-http.handlers.ts	4
-src/gateway/mcp-http.request.ts	2
 src/gateway/mcp-http.schema.ts	3
 src/gateway/method-scopes.ts	10
 src/gateway/node-browser-proxy-policy.ts	1
