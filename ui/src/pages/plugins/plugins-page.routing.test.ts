@@ -1,7 +1,9 @@
 /* @vitest-environment jsdom */
 
+import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { i18n, t } from "../../i18n/index.ts";
+import type { PluginCatalogItem, PluginDiscoveryDetailResult } from "../../lib/plugins/index.ts";
 import {
   createClient,
   createContext,
@@ -17,6 +19,34 @@ import {
   resetPluginsPageTestState,
 } from "./plugins-page.test-support.ts";
 import type { PluginsRouteData } from "./route-data.ts";
+
+function discoveryDetail(
+  plugin: PluginCatalogItem & { catalogId: string },
+): PluginDiscoveryDetailResult {
+  return {
+    plugin: {
+      id: plugin.catalogId,
+      catalog: { name: plugin.name, official: true, categories: [] },
+      local: {
+        present: plugin.installed,
+        installed: plugin.installed,
+        enabled: plugin.enabled,
+        state: plugin.state,
+        pluginId: plugin.id,
+        action: plugin.installed ? "manage" : "install",
+      },
+    },
+    detail: {
+      origin: "clawhub",
+      packageName: plugin.id,
+      topics: [],
+      configuration: [],
+      mcpServers: [],
+      skills: [],
+      versions: [],
+    },
+  };
+}
 
 function clickHubTab(page: HTMLElement, tab: "plugins" | "skills") {
   page
@@ -351,6 +381,222 @@ describe("PluginsPage routing", () => {
     nextCatalog.resolve(result);
     await refresh;
   });
+
+  it("keeps the autosaved inspection when an older optional catalog completes", async () => {
+    const plugin = { ...createPlugin(), catalogId: "ch_d29ya2JvYXJk", version: "1.2.3" };
+    const result = createResult(plugin);
+    const catalog = deferred<PluginDiscoveryDetailResult>();
+    let inspections = 0;
+    let catalogs = 0;
+    const { client, request } = createClient(async (method) => {
+      if (method === "plugins.inspect") {
+        const inspection = createInspectResult();
+        return {
+          ...inspection,
+          components: {
+            ...inspection.components,
+            skills: [++inspections === 1 ? "Original skill" : "Current skill"],
+          },
+        };
+      }
+      if (method === "plugins.catalog.get") {
+        if (++catalogs === 1) {
+          return catalog.promise;
+        }
+        throw new Error("Optional catalog unavailable");
+      }
+      if (method === "plugins.list") {
+        return result;
+      }
+      throw new Error(`Unexpected method: ${method}`);
+    });
+    const harness = createGateway(client);
+    const configState = {
+      connected: true,
+      configFormDirty: false,
+      lastError: null,
+      configAutoSaveStatus: "idle",
+      configForm: { plugins: { entries: { workboard: { config: { greeting: "Before" } } } } },
+      configUiHints: {},
+      configSchema: {
+        type: "object",
+        properties: {
+          plugins: {
+            type: "object",
+            properties: {
+              entries: {
+                type: "object",
+                properties: {
+                  workboard: {
+                    type: "object",
+                    properties: {
+                      config: {
+                        type: "object",
+                        properties: { greeting: { type: "string", title: "Greeting" } },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    };
+    const runtimeConfig = createRuntimeConfigHarness(
+      vi.fn(async () => undefined),
+      configState,
+      () => client,
+    );
+    const { page } = await mountPage(
+      createContext(harness.gateway, undefined, undefined, runtimeConfig),
+      createPluginsRouteData(
+        harness.gateway,
+        result,
+        createPluginsRouteLocation("/settings/plugins/workboard#configuration"),
+      ),
+    );
+    await vi.waitFor(() => expect(catalogs).toBe(1));
+    const input = page.querySelector<HTMLInputElement>(
+      '.plugin-catalog-detail__panel input[type="text"]',
+    );
+    expect(input).not.toBeNull();
+    input!.value = "After";
+    input!.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(runtimeConfig.runtimeConfig.patchForm).toHaveBeenCalledWith(
+      ["plugins", "entries", "workboard", "config", "greeting"],
+      "After",
+    );
+    configState.configForm.plugins.entries.workboard.config.greeting = "After";
+    configState.configAutoSaveStatus = "saving";
+    runtimeConfig.notify();
+    configState.configAutoSaveStatus = "saved";
+    runtimeConfig.notify();
+    await vi.waitFor(() => expect(catalogs).toBe(2));
+    page
+      .querySelector("#plugin-installed-detail-tab-skills")!
+      .dispatchEvent(new MouseEvent("click", { detail: 1, bubbles: true }));
+    await page.updateComplete;
+    const rows = () =>
+      [...page.querySelectorAll(".plugin-catalog-detail__row h3")].map((row) => row.textContent);
+    expect(rows()).toEqual(["Current skill"]);
+
+    catalog.resolve(discoveryDetail(plugin));
+    await catalog.promise;
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    await page.updateComplete;
+
+    expect(rows()).toEqual(["Current skill"]);
+    expect(request.mock.calls.filter(([method]) => method === "plugins.inspect")).toHaveLength(2);
+  });
+
+  it.each(["review", "installing"])(
+    "keeps the latest Install selection while its wizard is %s",
+    async (stage) => {
+      const details = ["Alpha", "Beta"].map((name) =>
+        discoveryDetail({
+          ...createPlugin({
+            id: name.toLowerCase(),
+            name,
+            installed: false,
+            state: "not-installed",
+          }),
+          catalogId: name === "Alpha" ? "ch_YWxwaGE" : "ch_YmV0YQ",
+        }),
+      );
+      const [alpha, beta] = details;
+      const alphaRead = deferred<PluginDiscoveryDetailResult>();
+      const betaRead = deferred<PluginDiscoveryDetailResult>();
+      const installation = deferred<unknown>();
+      const { client, request } = createClient(async (method, params) => {
+        if (method === "plugins.catalog.browse") {
+          return {
+            items:
+              asNullableRecord(params)?.intent === "all"
+                ? details.map((detail) => detail.plugin)
+                : [],
+          };
+        }
+        if (method === "plugins.catalog.categories") {
+          return { categories: [] };
+        }
+        if (method === "plugins.catalog.get") {
+          return asNullableRecord(params)?.id === alpha!.plugin.id
+            ? alphaRead.promise
+            : betaRead.promise;
+        }
+        if (method === "plugins.install") {
+          return installation.promise;
+        }
+        if (method === "plugins.list") {
+          return createResult();
+        }
+        throw new Error(`Unexpected method: ${method}`);
+      });
+      const harness = createGateway(client);
+      const { page } = await mountPage(
+        createContext(harness.gateway),
+        createPluginsRouteData(
+          harness.gateway,
+          createResult(),
+          createPluginsRouteLocation("/plugins"),
+        ),
+      );
+      try {
+        await vi.waitFor(() =>
+          expect(page.querySelectorAll(".plugin-catalog-card__install")).toHaveLength(2),
+        );
+        page.querySelector<HTMLButtonElement>('[aria-label="Install Alpha"]')!.click();
+        page.querySelector<HTMLButtonElement>('[aria-label="Install Beta"]')!.click();
+        await vi.waitFor(() =>
+          expect(
+            request.mock.calls.filter(([method]) => method === "plugins.catalog.get"),
+          ).toHaveLength(2),
+        );
+        betaRead.resolve(beta!);
+        const wizard = () => page.querySelector(".plugin-install-wizard");
+        await vi.waitFor(() => expect(wizard()?.querySelector("h2")?.textContent).toBe("Beta"));
+        if (stage === "installing") {
+          [...wizard()!.querySelectorAll<HTMLButtonElement>("button")]
+            .find((button) => button.textContent?.trim() === "Install Beta")!
+            .click();
+          await vi.waitFor(() =>
+            expect(request).toHaveBeenCalledWith("plugins.install", {
+              source: "clawhub",
+              packageName: "beta",
+            }),
+          );
+          expect(wizard()?.getAttribute("data-stage")).toBe("installing");
+        }
+        alphaRead.resolve(alpha!);
+        await alphaRead.promise;
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 0);
+        });
+        await page.updateComplete;
+
+        expect(wizard()?.querySelector("h2")?.textContent).toBe("Beta");
+        expect(wizard()?.getAttribute("data-stage")).toBe(stage);
+        expect(request.mock.calls.filter(([method]) => method === "plugins.install")).toHaveLength(
+          stage === "installing" ? 1 : 0,
+        );
+      } finally {
+        alphaRead.resolve(alpha!);
+        betaRead.resolve(beta!);
+        installation.resolve({
+          ok: true,
+          plugin: createPlugin({ id: "beta", name: "Beta", enabled: true, state: "enabled" }),
+          restartRequired: false,
+        });
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 0);
+        });
+        await page.updateComplete;
+      }
+    },
+  );
 
   it("renders local settings before optional ClawHub presentation settles", async () => {
     const plugin = createPlugin({
