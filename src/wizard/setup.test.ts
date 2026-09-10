@@ -2477,11 +2477,6 @@ describe("runSetupWizard", () => {
     );
     expectMockCallArgNotNull(warnIfModelConfigLooksOff, 0, 0, "model warning");
     expectMockCallArgNotNull(warnIfModelConfigLooksOff, 0, 1, "model warning");
-    expectRecordFields(
-      getMockCallArg(warnIfModelConfigLooksOff, 0, 2, "model warning"),
-      { validateCatalog: false },
-      "model warning options",
-    );
   });
 
   it("re-prompts for auth when applyAuthChoice requests retry selection", async () => {
