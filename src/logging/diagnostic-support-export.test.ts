@@ -46,7 +46,7 @@ describe("diagnostic support export", () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it.each(["current", "other-state alias"])(
+  it.each(["current", "other-state alias", "marked relocated alias"])(
     "excludes %s capture files selected as config, logs, or a stability bundle",
     async (owner) => {
       const stateDir = path.join(tempDir, "state");
@@ -61,6 +61,18 @@ describe("diagnostic support export", () => {
         const alias = path.join(tempDir, "capture-alias");
         fs.symlinkSync(capture, alias, process.platform === "win32" ? "junction" : "dir");
         capture = alias;
+      }
+      if (owner === "marked relocated alias") {
+        const original = `${path.join(tempDir, "other-state")}.update-captures`;
+        const moved = path.join(tempDir, "relocated");
+        fs.renameSync(original, moved);
+        fs.unlinkSync(capture);
+        fs.symlinkSync(moved, capture, process.platform === "win32" ? "junction" : "dir");
+        fs.rmdirSync(path.join(tempDir, "other-state"));
+        fs.writeFileSync(
+          path.join(moved, ".openclaw-private-update-capture"),
+          "openclaw-private-update-capture-v1\n",
+        );
       }
       const privatePath = path.join(capture, "private.json");
       const marker = "synthetic-retained-record-not-for-support";
