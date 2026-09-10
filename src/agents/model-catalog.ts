@@ -488,10 +488,12 @@ export async function buildPreparedModelCatalogSnapshot(
     mergeCatalogRouteVariants(routeVariants, manifestModels);
     mergeCatalogEntries(models, manifestModels);
     logStage("manifest-models-merged", `entries=${models.length}`);
-    const configuredModels = buildConfiguredModelCatalog({
+    const configuredCatalogParams = {
       cfg,
+      catalog: orderedRegistryModels,
       manifestPlugins: manifestMetadataSnapshot,
-    });
+    };
+    const configuredModels = buildConfiguredModelCatalog(configuredCatalogParams);
     logStage("configured-models-prepared", `entries=${models.length}`);
 
     if (!params.readOnly && params.includeProviderPluginAugmentation !== false) {
@@ -579,6 +581,7 @@ export async function buildPreparedModelCatalogSnapshot(
     logStage("plugin-models-merged", `entries=${models.length}`);
 
     if (configuredModels.length > 0) {
+      const configuredOverrides = buildConfiguredModelCatalog(configuredCatalogParams);
       // Augmentation may mutate borrowed rows. Reindex before configured overlays so
       // route lookup keeps the first current donor, including duplicate keys.
       routeVariants.indexByKey.clear();
@@ -588,11 +591,11 @@ export async function buildPreparedModelCatalogSnapshot(
           routeVariants.indexByKey.set(key, index);
         }
       });
-      mergeCatalogEntries(models, configuredModels, {
+      mergeCatalogEntries(models, configuredOverrides, {
         catalogRoutes: routeVariants,
         preserveBaseCompat: true,
       });
-      mergeCatalogRouteVariants(routeVariants, configuredModels, { preserveBaseCompat: true });
+      mergeCatalogRouteVariants(routeVariants, configuredOverrides, { preserveBaseCompat: true });
     }
     logStage("configured-models-finalized", `entries=${models.length}`);
 
