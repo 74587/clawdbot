@@ -646,16 +646,13 @@ class OpenClawDesktopPanel extends OpenClawLitElement {
         void this.connectEnvironment(this.environmentId, this.controlling);
       },
     });
+    const content = { state: this.state, notice, picker, credentials, recovery } as const;
     if (this.documentMode) {
       return renderDesktopDocumentView({
-        state: this.state,
+        ...content,
         controlling: this.controlling,
         scaleViewport: this.scaleViewport,
         keyboardInputValue: this.mobileKeyboard.value,
-        notice,
-        picker,
-        credentials,
-        recovery,
         onControlToggle: () => void this.connectEnvironment(this.environmentId, !this.controlling),
         onKeyboardFocus: () => this.mobileKeyboard.focus(),
         onKeyboardEvent: (event) => this.mobileKeyboard.handleKeyboardEvent(event),
@@ -710,14 +707,7 @@ class OpenClawDesktopPanel extends OpenClawLitElement {
                 onClose: () => this.closePanel(),
               })
         }
-        ${renderDesktopPanelContent({
-          state: this.state,
-          notice,
-          picker,
-          recovery,
-          credentials,
-          connection,
-        })}
+        ${renderDesktopPanelContent({ ...content, connection })}
       </section>
     `;
   }
