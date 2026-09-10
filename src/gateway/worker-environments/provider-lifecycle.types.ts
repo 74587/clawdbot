@@ -115,6 +115,7 @@ export type WorkerProviderLifecycleOptions = Omit<
     ): Promise<void>;
   };
   credentialBroker: WorkerCredentialBroker;
+  warn: (message: string) => void;
   callBootstrap: <T>(
     installation: WorkerInstallationArtifact,
     run: (signal: AbortSignal) => Promise<T>,

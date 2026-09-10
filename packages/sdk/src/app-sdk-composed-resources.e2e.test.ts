@@ -136,6 +136,8 @@ async function createFakeGateway(): Promise<FakeGateway> {
     list: () => [worker],
     get: (environmentId: string) => (environmentId === worker.environmentId ? worker : undefined),
     inventoryVersion: () => 0,
+    readMachineShape: () => undefined,
+    machineShapeVersion: () => 0,
     supportsExecutionMode: (profileId, mode) =>
       profileId === "development" && mode === "worker-turn",
     listMachineOptions: async () => undefined,

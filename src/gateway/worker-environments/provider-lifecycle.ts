@@ -17,14 +17,13 @@ import {
 } from "./project-preparation.js";
 import { createWorkerProviderIntent } from "./provider-intent.js";
 import type { WorkerProviderLifecycleOptions } from "./provider-lifecycle.types.js";
+import { createWorkerMachineCatalog } from "./provider-machine-catalog.js";
 import { createWorkerNodeProvisioning } from "./provider-node-provisioning.js";
 import { createWorkerProviderOwnerLifecycle } from "./provider-owner-lifecycle.js";
 import { retireMismatchedWorkerLease } from "./provider-persisted-lease.js";
 import { createWorkerProvisionCancellation } from "./provider-provisioning-cancellation.js";
 import { createWorkerRuntimeRefresher } from "./provider-runtime-refresh.js";
 import {
-  normalizeWorkerMachineOptions,
-  normalizeWorkerOperatingSystems,
   requireProviderOperationTimeoutMs,
   requireWorkerLease,
   requireWorkerLeaseStatus,
@@ -80,27 +79,12 @@ export function createWorkerProviderLifecycle(options: WorkerProviderLifecycleOp
     destroy,
   } = createWorkerProviderOwnerLifecycle({ ...options, providerFor, requireWorkerProfile });
 
-  const listMachineOptions = async (profileId: string) => {
-    const profile = options.getConfig().cloudWorkers?.profiles?.[profileId];
-    if (!profile) {
-      return undefined;
-    }
-    const provider = options.resolveProvider(profile.provider);
-    return normalizeWorkerMachineOptions(
-      await provider?.listMachineOptions?.(requireWorkerProfile(profile.settings ?? {})),
-    );
-  };
-
-  const listOperatingSystems = async (profileId: string) => {
-    const profile = options.getConfig().cloudWorkers?.profiles?.[profileId];
-    if (!profile) {
-      return undefined;
-    }
-    const provider = options.resolveProvider(profile.provider);
-    return normalizeWorkerOperatingSystems(
-      await provider?.listOperatingSystems?.(requireWorkerProfile(profile.settings ?? {})),
-    );
-  };
+  const machineCatalog = createWorkerMachineCatalog({
+    getConfig: options.getConfig,
+    resolveProvider: options.resolveProvider,
+    warn: options.warn,
+    requireWorkerProfile,
+  });
 
   const expirePrepared = (record: WorkerEnvironmentRecord) =>
     record.preparation?.consumedAtMs === null && record.preparation.expiresAtMs <= now()
@@ -719,8 +703,7 @@ export function createWorkerProviderLifecycle(options: WorkerProviderLifecycleOp
       }),
     destroy,
     identityResolverFor,
-    listMachineOptions,
-    listOperatingSystems,
+    ...machineCatalog,
     providerFor,
     reconcileRecord,
   };

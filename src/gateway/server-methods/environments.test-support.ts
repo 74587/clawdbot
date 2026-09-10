@@ -1,3 +1,4 @@
+import { expectDefined } from "@openclaw/normalization-core";
 import { vi } from "vitest";
 import type {
   WorkerEnvironmentServiceContract,
@@ -95,6 +96,8 @@ export const workerService = (overrides: Partial<TestWorkerService> = {}) => ({
   list: vi.fn(() => []),
   get: vi.fn(() => undefined),
   inventoryVersion: vi.fn(() => 0),
+  readMachineShape: () => undefined,
+  machineShapeVersion: () => 0,
   supportsExecutionMode: vi.fn(() => false),
   listMachineOptions: vi.fn(async () => undefined),
   listOperatingSystems: vi.fn(async () => undefined),
@@ -147,11 +150,7 @@ export async function callEnvironmentMethod(
       options.connectedNodes,
     ),
   } as never);
-  const call = respond.mock.calls.at(0);
-  if (call === undefined) {
-    throw new Error("expected environments handler to respond");
-  }
-  return call;
+  return expectDefined(respond.mock.calls.at(0), "expected environments handler to respond");
 }
 
 export class FakeWorkerServiceError extends Error {

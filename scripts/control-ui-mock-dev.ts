@@ -1994,6 +1994,7 @@ async function createChatPickerScenario(
         environmentId: "worker:9f2c4e7a81d24b06a5c3f8e1b7d94c1a",
         providerId: "machine0",
         profileId: "team",
+        machine: { class: "medium", os: "linux", osLabel: "Linux", cpu: 4, memoryGb: 16 },
         activeOwnerEpoch: 4,
         workerBundleHash: "b".repeat(64),
         workspaceBaseManifestRef: "sha256:cloud-refactor-base",

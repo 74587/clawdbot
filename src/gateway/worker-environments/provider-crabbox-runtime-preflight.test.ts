@@ -85,7 +85,12 @@ describe("Crabbox runtime preflight cleanup", () => {
         .spyOn(processRuntime, "runCommandWithTimeout")
         .mockImplementation(async (argv) => {
           if (argv[1] === "--version") {
+            expect(argv.slice(1)).toEqual(["--version"]);
             return commandResult({ stdout: "0.55.0" });
+          }
+          if (argv[1] === "providers") {
+            expect(argv.slice(1)).toEqual(["providers", "--json"]);
+            return commandResult({ stdout: "[]" });
           }
           expect(argv.slice(1)).toEqual(["config", "show", "--json"]);
           if (failure === "spawn") {
@@ -111,7 +116,12 @@ describe("Crabbox runtime preflight cleanup", () => {
       });
       await restarted.reconcileOnce();
       expect(support.testState.store.get(failed.environmentId)).toEqual(failed);
-      expect(runCommand).toHaveBeenCalledTimes(failure === "setup-env" ? 0 : 2);
+      expect(runCommand.mock.calls.map(([argv]) => argv.slice(1))).toEqual([
+        ["--version"],
+        ["--version"],
+        ["providers", "--json"],
+        ...(failure === "setup-env" ? [] : [["config", "show", "--json"]]),
+      ]);
     },
   );
 
@@ -232,9 +242,14 @@ describe("Crabbox runtime preflight cleanup", () => {
     const calls: string[][] = [];
     vi.spyOn(processRuntime, "runCommandWithTimeout").mockImplementation(async (argv) => {
       if (argv[1] === "--version") {
+        expect(argv.slice(1)).toEqual(["--version"]);
         return commandResult({ stdout: "0.55.0" });
       }
       calls.push(argv);
+      if (argv[1] === "providers") {
+        expect(argv.slice(1)).toEqual(["providers", "--json"]);
+        return commandResult({ stdout: "[]" });
+      }
       if (argv[1] === "config") {
         return changed && "result" in scenario
           ? expectDefined(scenario.result, "runtime refusal")
@@ -346,24 +361,40 @@ describe("Crabbox runtime preflight cleanup", () => {
       name: "invalid duration",
       settings: { ...PROFILE, ttl: "invalid" },
       message: "positive Go duration",
+      commands: [],
     },
     {
       name: "warm image without effective class",
       settings: { ...CLASSLESS_PROFILE, warmImage: true },
       message: "warmImage requires a configured class or a placement machine class",
+      commands: [["--version"], ["--version"], ["providers", "--json"]],
     },
-  ])("keeps $name permanent even with missing runtime input", async ({ settings, message }) => {
-    vi.stubEnv(SETUP_ENV, undefined);
-    support.getDevelopmentProfile().provider = "crabbox";
-    support.getDevelopmentProfile().settings = settings;
-    const runCommand = vi.spyOn(processRuntime, "runCommandWithTimeout");
-    const provider = await registerProvider();
-    const service = support.createService(provider, { prepareNodeEnrollment: vi.fn() });
-    await expect(service.create("development", "invalid-immutable")).rejects.toMatchObject({
-      code: "invalid_profile",
-      message: expect.stringContaining(message),
-    });
-    expect(support.testState.store.list()[0]).toMatchObject({ state: "failed", leaseId: null });
-    expect(runCommand).not.toHaveBeenCalled();
-  });
+  ])(
+    "keeps $name permanent even with missing runtime input",
+    async ({ settings, message, commands }) => {
+      vi.stubEnv(SETUP_ENV, undefined);
+      support.getDevelopmentProfile().provider = "crabbox";
+      support.getDevelopmentProfile().settings = settings;
+      const runCommand = vi
+        .spyOn(processRuntime, "runCommandWithTimeout")
+        .mockImplementation(async (argv) => {
+          if (argv[1] === "--version") {
+            expect(argv.slice(1)).toEqual(["--version"]);
+            return commandResult({ stdout: "0.55.0" });
+          }
+          expect(argv.slice(1)).toEqual(["providers", "--json"]);
+          return commandResult({ stdout: "[]" });
+        });
+      const provider = await registerProvider();
+      const service = support.createService(provider, { prepareNodeEnrollment: vi.fn() });
+      await expect(service.create("development", "invalid-immutable")).rejects.toMatchObject({
+        code: "invalid_profile",
+        message: expect.stringContaining(message),
+      });
+      expect(support.testState.store.list()[0]).toMatchObject({ state: "failed", leaseId: null });
+      await support.waitForFast(() =>
+        expect(runCommand.mock.calls.map(([argv]) => argv.slice(1))).toEqual(commands),
+      );
+    },
+  );
 });

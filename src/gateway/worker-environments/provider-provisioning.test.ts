@@ -4,12 +4,17 @@ import {
   WorkerProviderError,
   type WorkerExecutionMode,
   type WorkerLease,
+  type WorkerMachineOption,
   type WorkerProfile,
   type WorkerProvider,
 } from "../../plugins/types.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import { hashWorkerCredential } from "./credential.js";
 import { DEVICE_WORKER_PROVIDER_ID } from "./device-provider-identity.js";
+import {
+  readWorkerPlacementIdentity,
+  projectWorkerSessionPlacement,
+} from "./placement-projector.js";
 import * as support from "./service.test-support.js";
 
 type WorkerEnvironmentServiceError = support.WorkerEnvironmentServiceError;
@@ -439,16 +444,166 @@ describe("worker environment service", () => {
       { id: "os-a", label: "OS A", default: true },
       { id: "os-b", label: "OS B", disabledReason: "Upgrade the worker provider." },
     ];
-    const listMachineOptions = vi.fn(async () => machines);
+    const listMachineOptions = vi.fn(async () => machines).mockResolvedValueOnce([machines[0]!]);
     const listOperatingSystems = vi.fn(async () => systems);
     const workerService = support.createService(
       support.createProvider({ listMachineOptions, listOperatingSystems }),
     );
 
+    const cases: Array<{ id: string; overrides: WorkerProfile }> = [
+      { id: "default", overrides: {} },
+      { id: "override", overrides: { machineClass: "standard", os: "os-b" } },
+      { id: "unknown", overrides: { machineClass: "custom", os: "other" } },
+    ];
+    const records = cases.map(({ id, overrides }) =>
+      support.testState.store.createIntent({
+        environmentId: id,
+        providerId: "fake",
+        profileId: "development",
+        profileSnapshot: { settings: { region: "test" }, ...overrides },
+        provisionOperationId: `provision:${id}`,
+      }),
+    );
+    const project = (record: (typeof records)[number]) => {
+      const placement = {
+        sessionId: "session-1",
+        sessionKey: "agent:main:session-1",
+        agentId: "main",
+        executionMode: "worker-turn" as const,
+        state: "provisioning" as const,
+        environmentId: record.environmentId,
+        activeOwnerEpoch: null,
+        generation: 1,
+        createdAtMs: 1,
+        updatedAtMs: 1,
+        stateChangedAtMs: 1,
+        workspaceBaseManifestRef: null,
+        remoteWorkspaceDir: null,
+        workerBundleHash: null,
+        lastTranscriptAckCursor: null,
+        lastLiveEventAckCursor: null,
+        recoveryError: null,
+        terminalReason: null,
+        terminalAtMs: null,
+        turnClaim: null,
+      };
+      return projectWorkerSessionPlacement(
+        placement,
+        undefined,
+        undefined,
+        readWorkerPlacementIdentity(placement, workerService),
+      );
+    };
+    expect(project(records[0]!)).not.toHaveProperty("machine");
+    expect(project(records[1]!)).toMatchObject({ machine: { class: "standard", os: "os-b" } });
+    const coldVersion = workerService.machineShapeVersion();
+    await workerService.listMachineOptions("development");
+    expect(project(records[0]!)).toMatchObject({
+      machine: { class: "standard", cpu: 32, memoryGb: 64 },
+    });
+    expect(project(records[0]!)).not.toHaveProperty("machine.os");
     await expect(workerService.listMachineOptions("development")).resolves.toEqual(machines);
+    expect(project(records[0]!)).not.toHaveProperty("machine");
     await expect(workerService.listOperatingSystems("development")).resolves.toEqual(systems);
     expect(listMachineOptions).toHaveBeenCalledWith({ region: "test" });
     expect(listOperatingSystems).toHaveBeenCalledWith({ region: "test" });
+    expect(project(records[0]!)).toMatchObject({
+      machine: {
+        class: "standard",
+        os: "os-a",
+        osLabel: "OS A",
+        cpu: 32,
+        memoryGb: 64,
+      },
+    });
+    expect(project(records[1]!)).toMatchObject({
+      machine: { class: "standard", os: "os-b", osLabel: "OS B" },
+    });
+    expect(project(records[1]!)).not.toHaveProperty("machine.cpu");
+    expect(project(records[2]!)).toMatchObject({ machine: { class: "custom", os: "other" } });
+    expect(workerService.machineShapeVersion()).toBeGreaterThan(coldVersion);
+    const warmVersion = workerService.machineShapeVersion();
+    await workerService.listMachineOptions("development");
+    await workerService.listOperatingSystems("development");
+    expect(workerService.machineShapeVersion()).toBe(warmVersion);
+
+    support.getDevelopmentProfile().settings = { region: "changed" };
+    await workerService.listMachineOptions("development");
+    expect(project(records[0]!)).not.toHaveProperty("machine");
+    expect(project(records[1]!)).toMatchObject({ machine: { class: "standard", os: "os-b" } });
+  });
+
+  it("warms the current profile while an earlier configuration catalog is still pending", async () => {
+    const previousCatalog = createDeferredCore<readonly WorkerMachineOption[]>();
+    const service = support.createService(
+      support.createProvider({
+        listMachineOptions: async (settings) =>
+          settings.region === "test"
+            ? previousCatalog.promise
+            : [{ id: "large", label: "Large", cpu: 8, default: true }],
+        listOperatingSystems: async () => [{ id: "linux", label: "Linux", default: true }],
+      }),
+    );
+    await service.prepareProjectIntent("development");
+    support.getDevelopmentProfile().settings = { region: "replacement" };
+    const intent = await service.prepareProjectIntent("development");
+    const environment = support.testState.store.createIntent({
+      environmentId: "replacement-worker",
+      providerId: intent.providerId,
+      profileId: "development",
+      profileSnapshot: intent.profileSnapshot,
+      provisionOperationId: "provision:replacement",
+    });
+    try {
+      await support.waitForFast(() =>
+        expect(service.readMachineShape(environment.environmentId)).toEqual({
+          class: "large",
+          cpu: 8,
+          os: "linux",
+          osLabel: "Linux",
+        }),
+      );
+    } finally {
+      previousCatalog.resolve([{ id: "small", label: "Small", cpu: 2, default: true }]);
+    }
+    await previousCatalog.promise;
+    expect(service.readMachineShape(environment.environmentId)).toEqual({
+      class: "large",
+      cpu: 8,
+      os: "linux",
+      osLabel: "Linux",
+    });
+  });
+
+  it("keeps allocation and available OS metadata when machine discovery fails", async () => {
+    const warn = vi.fn();
+    const service = support.createService(
+      support.createProvider({
+        listMachineOptions: async () => {
+          throw new Error("catalog unavailable");
+        },
+        listOperatingSystems: async () => [{ id: "linux", label: "Linux", default: true }],
+      }),
+      { logger: { warn } },
+    );
+    service.subscribeMachineShapeChanged(() => {
+      throw new Error("observer unavailable");
+    });
+    const environment = await service.create("development", "catalog-failure");
+    expect(environment.state).toBe("ready");
+    await support.waitForFast(() =>
+      expect(warn).toHaveBeenCalledWith(
+        "Worker machine catalog warmup failed for profile development",
+      ),
+    );
+    expect(service.readMachineShape(environment.environmentId)).toEqual({
+      os: "linux",
+      osLabel: "Linux",
+    });
+    await expect(service.listOperatingSystems("development")).resolves.toEqual([
+      { id: "linux", label: "Linux", default: true },
+    ]);
+    expect(warn).toHaveBeenCalledWith("Worker machine metadata change reporting failed");
   });
 
   it.each([

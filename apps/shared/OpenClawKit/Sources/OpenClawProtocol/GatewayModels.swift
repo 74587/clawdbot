@@ -8097,6 +8097,36 @@ public struct SessionPlacementRunner: Codable, Sendable {
     }
 }
 
+public struct SessionPlacementMachine: Codable, Sendable {
+    public let _class: String?
+    public let os: String?
+    public let oslabel: String?
+    public let cpu: Int?
+    public let memorygb: Int?
+
+    public init(
+        _class: String? = nil,
+        os: String? = nil,
+        oslabel: String? = nil,
+        cpu: Int? = nil,
+        memorygb: Int? = nil)
+    {
+        self._class = _class
+        self.os = os
+        self.oslabel = oslabel
+        self.cpu = cpu
+        self.memorygb = memorygb
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case _class = "class"
+        case os
+        case oslabel = "osLabel"
+        case cpu
+        case memorygb = "memoryGb"
+    }
+}
+
 public struct LocalSessionPlacement: Codable, Sendable {
     public let state: String
     public let generation: Int
@@ -8165,6 +8195,7 @@ public struct ProvisioningSessionPlacement: Codable, Sendable {
     public let statechangedatms: Int
     public let providerid: String?
     public let profileid: String?
+    public let machine: SessionPlacementMachine?
     public let environmentid: String?
 
     public init(
@@ -8175,6 +8206,7 @@ public struct ProvisioningSessionPlacement: Codable, Sendable {
         statechangedatms: Int,
         providerid: String? = nil,
         profileid: String? = nil,
+        machine: SessionPlacementMachine? = nil,
         environmentid: String? = nil)
     {
         self.state = state
@@ -8184,6 +8216,7 @@ public struct ProvisioningSessionPlacement: Codable, Sendable {
         self.statechangedatms = statechangedatms
         self.providerid = providerid
         self.profileid = profileid
+        self.machine = machine
         self.environmentid = environmentid
     }
 
@@ -8195,6 +8228,7 @@ public struct ProvisioningSessionPlacement: Codable, Sendable {
         case statechangedatms = "stateChangedAtMs"
         case providerid = "providerId"
         case profileid = "profileId"
+        case machine
         case environmentid = "environmentId"
     }
 }
@@ -8207,6 +8241,7 @@ public struct SyncingSessionPlacement: Codable, Sendable {
     public let statechangedatms: Int
     public let providerid: String?
     public let profileid: String?
+    public let machine: SessionPlacementMachine?
     public let environmentid: String
     public let workerbundlehash: String
 
@@ -8218,6 +8253,7 @@ public struct SyncingSessionPlacement: Codable, Sendable {
         statechangedatms: Int,
         providerid: String? = nil,
         profileid: String? = nil,
+        machine: SessionPlacementMachine? = nil,
         environmentid: String,
         workerbundlehash: String)
     {
@@ -8228,6 +8264,7 @@ public struct SyncingSessionPlacement: Codable, Sendable {
         self.statechangedatms = statechangedatms
         self.providerid = providerid
         self.profileid = profileid
+        self.machine = machine
         self.environmentid = environmentid
         self.workerbundlehash = workerbundlehash
     }
@@ -8240,6 +8277,7 @@ public struct SyncingSessionPlacement: Codable, Sendable {
         case statechangedatms = "stateChangedAtMs"
         case providerid = "providerId"
         case profileid = "profileId"
+        case machine
         case environmentid = "environmentId"
         case workerbundlehash = "workerBundleHash"
     }
@@ -8253,6 +8291,7 @@ public struct StartingSessionPlacement: Codable, Sendable {
     public let statechangedatms: Int
     public let providerid: String?
     public let profileid: String?
+    public let machine: SessionPlacementMachine?
     public let environmentid: String
     public let workerbundlehash: String
     public let workspacebasemanifestref: String
@@ -8266,6 +8305,7 @@ public struct StartingSessionPlacement: Codable, Sendable {
         statechangedatms: Int,
         providerid: String? = nil,
         profileid: String? = nil,
+        machine: SessionPlacementMachine? = nil,
         environmentid: String,
         workerbundlehash: String,
         workspacebasemanifestref: String,
@@ -8278,6 +8318,7 @@ public struct StartingSessionPlacement: Codable, Sendable {
         self.statechangedatms = statechangedatms
         self.providerid = providerid
         self.profileid = profileid
+        self.machine = machine
         self.environmentid = environmentid
         self.workerbundlehash = workerbundlehash
         self.workspacebasemanifestref = workspacebasemanifestref
@@ -8292,6 +8333,7 @@ public struct StartingSessionPlacement: Codable, Sendable {
         case statechangedatms = "stateChangedAtMs"
         case providerid = "providerId"
         case profileid = "profileId"
+        case machine
         case environmentid = "environmentId"
         case workerbundlehash = "workerBundleHash"
         case workspacebasemanifestref = "workspaceBaseManifestRef"
@@ -8307,6 +8349,7 @@ public struct ActiveWorkerSessionPlacement: Codable, Sendable {
     public let statechangedatms: Int
     public let providerid: String?
     public let profileid: String?
+    public let machine: SessionPlacementMachine?
     public let environmentid: String
     public let activeownerepoch: Int
     public let workerbundlehash: String
@@ -8327,6 +8370,7 @@ public struct ActiveWorkerSessionPlacement: Codable, Sendable {
         statechangedatms: Int,
         providerid: String? = nil,
         profileid: String? = nil,
+        machine: SessionPlacementMachine? = nil,
         environmentid: String,
         activeownerepoch: Int,
         workerbundlehash: String,
@@ -8346,6 +8390,7 @@ public struct ActiveWorkerSessionPlacement: Codable, Sendable {
         self.statechangedatms = statechangedatms
         self.providerid = providerid
         self.profileid = profileid
+        self.machine = machine
         self.environmentid = environmentid
         self.activeownerepoch = activeownerepoch
         self.workerbundlehash = workerbundlehash
@@ -8367,6 +8412,7 @@ public struct ActiveWorkerSessionPlacement: Codable, Sendable {
         case statechangedatms = "stateChangedAtMs"
         case providerid = "providerId"
         case profileid = "profileId"
+        case machine
         case environmentid = "environmentId"
         case activeownerepoch = "activeOwnerEpoch"
         case workerbundlehash = "workerBundleHash"
@@ -8389,6 +8435,7 @@ public struct DrainingSessionPlacement: Codable, Sendable {
     public let statechangedatms: Int
     public let providerid: String?
     public let profileid: String?
+    public let machine: SessionPlacementMachine?
     public let environmentid: String
     public let activeownerepoch: Int
     public let workerbundlehash: String
@@ -8408,6 +8455,7 @@ public struct DrainingSessionPlacement: Codable, Sendable {
         statechangedatms: Int,
         providerid: String? = nil,
         profileid: String? = nil,
+        machine: SessionPlacementMachine? = nil,
         environmentid: String,
         activeownerepoch: Int,
         workerbundlehash: String,
@@ -8426,6 +8474,7 @@ public struct DrainingSessionPlacement: Codable, Sendable {
         self.statechangedatms = statechangedatms
         self.providerid = providerid
         self.profileid = profileid
+        self.machine = machine
         self.environmentid = environmentid
         self.activeownerepoch = activeownerepoch
         self.workerbundlehash = workerbundlehash
@@ -8446,6 +8495,7 @@ public struct DrainingSessionPlacement: Codable, Sendable {
         case statechangedatms = "stateChangedAtMs"
         case providerid = "providerId"
         case profileid = "profileId"
+        case machine
         case environmentid = "environmentId"
         case activeownerepoch = "activeOwnerEpoch"
         case workerbundlehash = "workerBundleHash"
@@ -8467,6 +8517,7 @@ public struct ReconcilingSessionPlacement: Codable, Sendable {
     public let statechangedatms: Int
     public let providerid: String?
     public let profileid: String?
+    public let machine: SessionPlacementMachine?
     public let environmentid: String
     public let activeownerepoch: Int
     public let workerbundlehash: String
@@ -8485,6 +8536,7 @@ public struct ReconcilingSessionPlacement: Codable, Sendable {
         statechangedatms: Int,
         providerid: String? = nil,
         profileid: String? = nil,
+        machine: SessionPlacementMachine? = nil,
         environmentid: String,
         activeownerepoch: Int,
         workerbundlehash: String,
@@ -8502,6 +8554,7 @@ public struct ReconcilingSessionPlacement: Codable, Sendable {
         self.statechangedatms = statechangedatms
         self.providerid = providerid
         self.profileid = profileid
+        self.machine = machine
         self.environmentid = environmentid
         self.activeownerepoch = activeownerepoch
         self.workerbundlehash = workerbundlehash
@@ -8521,6 +8574,7 @@ public struct ReconcilingSessionPlacement: Codable, Sendable {
         case statechangedatms = "stateChangedAtMs"
         case providerid = "providerId"
         case profileid = "profileId"
+        case machine
         case environmentid = "environmentId"
         case activeownerepoch = "activeOwnerEpoch"
         case workerbundlehash = "workerBundleHash"
@@ -8541,6 +8595,7 @@ public struct ReclaimedSessionPlacement: Codable, Sendable {
     public let statechangedatms: Int
     public let providerid: String?
     public let profileid: String?
+    public let machine: SessionPlacementMachine?
     public let environmentid: String?
     public let activeownerepoch: Int?
     public let workspacebasemanifestref: String?
@@ -8560,6 +8615,7 @@ public struct ReclaimedSessionPlacement: Codable, Sendable {
         statechangedatms: Int,
         providerid: String? = nil,
         profileid: String? = nil,
+        machine: SessionPlacementMachine? = nil,
         environmentid: String? = nil,
         activeownerepoch: Int? = nil,
         workspacebasemanifestref: String? = nil,
@@ -8578,6 +8634,7 @@ public struct ReclaimedSessionPlacement: Codable, Sendable {
         self.statechangedatms = statechangedatms
         self.providerid = providerid
         self.profileid = profileid
+        self.machine = machine
         self.environmentid = environmentid
         self.activeownerepoch = activeownerepoch
         self.workspacebasemanifestref = workspacebasemanifestref
@@ -8598,6 +8655,7 @@ public struct ReclaimedSessionPlacement: Codable, Sendable {
         case statechangedatms = "stateChangedAtMs"
         case providerid = "providerId"
         case profileid = "profileId"
+        case machine
         case environmentid = "environmentId"
         case activeownerepoch = "activeOwnerEpoch"
         case workspacebasemanifestref = "workspaceBaseManifestRef"
@@ -8619,6 +8677,7 @@ public struct FailedSessionPlacement: Codable, Sendable {
     public let statechangedatms: Int
     public let providerid: String?
     public let profileid: String?
+    public let machine: SessionPlacementMachine?
     public let environmentid: String?
     public let activeownerepoch: Int?
     public let workspacebasemanifestref: String?
@@ -8640,6 +8699,7 @@ public struct FailedSessionPlacement: Codable, Sendable {
         statechangedatms: Int,
         providerid: String? = nil,
         profileid: String? = nil,
+        machine: SessionPlacementMachine? = nil,
         environmentid: String? = nil,
         activeownerepoch: Int? = nil,
         workspacebasemanifestref: String? = nil,
@@ -8660,6 +8720,7 @@ public struct FailedSessionPlacement: Codable, Sendable {
         self.statechangedatms = statechangedatms
         self.providerid = providerid
         self.profileid = profileid
+        self.machine = machine
         self.environmentid = environmentid
         self.activeownerepoch = activeownerepoch
         self.workspacebasemanifestref = workspacebasemanifestref
@@ -8682,6 +8743,7 @@ public struct FailedSessionPlacement: Codable, Sendable {
         case statechangedatms = "stateChangedAtMs"
         case providerid = "providerId"
         case profileid = "profileId"
+        case machine
         case environmentid = "environmentId"
         case activeownerepoch = "activeOwnerEpoch"
         case workspacebasemanifestref = "workspaceBaseManifestRef"
