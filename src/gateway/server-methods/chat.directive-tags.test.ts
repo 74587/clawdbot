@@ -3723,6 +3723,42 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
     );
   });
 
+  it.each([true, false])(
+    "supplements queued tool media without recreating runtime text (saved: %s)",
+    async (saved) => {
+      await withTranscriptFixtureState("openclaw-chat-send-queued-media-", async (fixtureDir) => {
+        const mediaUrl = writeSavedPng(fixtureDir, "fetched.png");
+        const text = "The directory fetch is complete.";
+        mockState.triggerAgentRunStart = true;
+        mockState.runtimeAssistantTextsBeforeDelivery = saved ? [text] : [];
+        mockState.dispatchedReplies = [
+          {
+            kind: "final",
+            payload: setReplyPayloadMetadata(
+              { text, mediaUrl, mediaUrls: [mediaUrl], trustedLocalMedia: true },
+              { assistantMessageIndex: 1 },
+            ),
+          },
+        ];
+        const { send } = createChatRequestFixture();
+        await send({
+          idempotencyKey: "idem-queued-tool-media",
+          expectBroadcast: false,
+          waitFor: "dedupe",
+        });
+
+        const messages = await readActiveAssistantTranscriptMessages();
+        expect(messages).toHaveLength(saved ? 2 : 1);
+        if (saved) {
+          expect(messages[0]?.content).toEqual([{ type: "text", text }]);
+        }
+        const supplement = messages.at(-1);
+        expect(supplement?.content).toEqual([expect.objectContaining({ type: "image" })]);
+        expect(JSON.stringify(supplement)).not.toContain(text);
+      });
+    },
+  );
+
   it("persists auto-TTS final media as audio-only so webchat does not duplicate assistant text", async () => {
     const { audioPath } = await createAudioTranscriptFixture("openclaw-chat-send-agent-tts-final-");
     setAgentRunReplies([
