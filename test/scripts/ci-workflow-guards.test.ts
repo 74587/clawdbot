@@ -1994,6 +1994,39 @@ function runControlUiI18nSourceFixture(options: {
 }
 
 describe("ci workflow guards", () => {
+  it("credits the max-lines baseline only through an emitted required ratchet guard", () => {
+    const manifest = runCiManifestFixture({
+      bundledPlanner: true,
+      eventName: "pull_request",
+      changedPaths: ["config/max-lines-baseline.txt"],
+      changedPlannerSource: `
+        export const hasBuildArtifactAffectingChange = () => false;
+        export const createChangedNodeTestShards = (_paths, options) => {
+          console.log("max-lines-guard:" + JSON.stringify(options.dedicatedMaxLinesRatchet));
+          return [];
+        };
+        export const createChangedExtensionFallbackShards = () => { throw new Error("Unexpected fallback"); };
+      `,
+    });
+    expect(manifest.status, manifest.output).toBe(0);
+    expect(manifest.output).toContain("max-lines-guard:true");
+    const tasks = JSON.parse(
+      expectDefined(manifest.outputs.checks_fast_core_matrix, "fast ratchet matrix"),
+    ).include;
+    expect(tasks).toContainEqual({
+      check_name: "checks-fast-baseline-ratchets",
+      runtime: "node",
+      task: "baseline-ratchets",
+    });
+    const context = { preflightOutputs: manifest.outputs };
+    expect(runCiGateFixture(renderCiGateEnvironment(context)).status).toBe(0);
+    for (const result of ["failure", "skipped"]) {
+      expect(
+        runCiGateFixture(renderCiGateEnvironment(context, { "checks-fast-core": result })).status,
+      ).toBe(1);
+    }
+  });
+
   it("keeps activity unit proof without unrelated dedicated UI E2E on a PR", () => {
     const manifest = runCiManifestFixture({
       bundledPlanner: true,
@@ -5433,6 +5466,7 @@ require("node:fs").writeFileSync("scheduler-baseline", process.env.OPENCLAW_UPGR
         runnerBackend: runnerProfile,
         dedicatedContractShards: dedicated,
         dedicatedUiE2e: uiE2e,
+        dedicatedMaxLinesRatchet: true,
       });
       for (const job of ["checks-ui-e2e", "checks-ui-e2e-real-gateway"]) {
         expect(
