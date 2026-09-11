@@ -569,6 +569,12 @@ describeControlUiE2e("Control UI Plugins mocked Gateway E2E", () => {
       await page.goto(`${server.baseUrl}plugins`);
       const explore = page.getByRole("region", { name: "Explore plugins" });
       await explore.getByRole("heading", { name: "Featured", exact: true }).waitFor();
+      const categoryLabels = await explore
+        .locator(".plugin-catalog-chips button")
+        .allTextContents();
+      expect(categoryLabels.map((label) => label.trim()).join(" | ")).toBe(
+        "All | Featured | Trending | Channels | Models | Agent runtimes | Memory | Context | Voice | Web | Media | Security | Integrations | Developer tools | Infrastructure | Documents & files | Inbox & collaboration | Productivity | Scheduling | Finance & payments | Sales & marketing | Data & analytics | Agent orchestration | Research | Other",
+      );
       const sections = explore.locator(".plugin-catalog-section");
       expect((await sections.locator("h2").allTextContents()).slice(0, 2)).toEqual([
         "Featured",
@@ -584,24 +590,25 @@ describeControlUiE2e("Control UI Plugins mocked Gateway E2E", () => {
       expect(await matrixCard.getByText(/downloads/u).count()).toBe(0);
       expect(await matrixCard.getByRole("button", { name: "Install Matrix" }).count()).toBe(1);
 
-      let requestCount = (await gateway.getRequests("plugins.catalog.browse")).length;
-      await explore.getByRole("button", { name: "Channels", exact: true }).click();
+      await explore.getByRole("button", { name: "Documents & files", exact: true }).click();
+      // Match full results, excluding section previews, then select the first page.
       const categoryRequest = await gateway.waitForRequest("plugins.catalog.browse", {
-        after: requestCount,
+        after: 0,
+        match: { intent: "all", category: "documents-files", pageSize: 100 },
       });
       expect(categoryRequest.params).toEqual({
         intent: "all",
-        category: "channels",
+        category: "documents-files",
         pageSize: 100,
       });
       expect(await explore.locator(".plugin-catalog-section").count()).toBe(0);
       await explore.getByRole("link", { name: "Matrix", exact: true }).waitFor();
 
       const search = explore.getByRole("searchbox", { name: "Search plugins" });
-      requestCount = (await gateway.getRequests("plugins.catalog.browse")).length;
       await search.fill("matrix");
       const searchRequest = await gateway.waitForRequest("plugins.catalog.browse", {
-        after: requestCount,
+        after: 0,
+        match: { intent: "all", query: "matrix", pageSize: 100 },
       });
       expect(searchRequest.params).toEqual({ intent: "all", query: "matrix", pageSize: 100 });
       expect(await explore.locator(".plugin-catalog-section").count()).toBe(0);
@@ -616,6 +623,17 @@ describeControlUiE2e("Control UI Plugins mocked Gateway E2E", () => {
 
       await page.goto(`${server.baseUrl}plugins`);
       await page.setViewportSize({ height: 1024, width: 768 });
+      await explore.getByRole("button", { name: "Scheduling", exact: true }).click();
+      // The fresh page may still issue its initial unfiltered browse request.
+      const mobileCategoryRequest = await gateway.waitForRequest("plugins.catalog.browse", {
+        after: 0,
+        match: { intent: "all", category: "scheduling", pageSize: 100 },
+      });
+      expect(mobileCategoryRequest.params).toEqual({
+        intent: "all",
+        category: "scheduling",
+        pageSize: 100,
+      });
       const grid = page.locator(".plugin-catalog-grid").first();
       await expect
         .poll(() =>
