@@ -4,6 +4,7 @@ import type {
   ChannelDeliveryStreamingConfig,
   MessageReceipt,
 } from "openclaw/plugin-sdk/channel-outbound";
+import type { ReplyToMode } from "openclaw/plugin-sdk/config-contracts";
 import type { MediaKind } from "openclaw/plugin-sdk/media-runtime";
 
 export type LineTokenSource = "config" | "env" | "file" | "none";
@@ -34,6 +35,8 @@ interface LineAccountBaseConfig {
   dmPolicy?: "open" | "allowlist" | "pairing" | "disabled";
   groupPolicy?: "open" | "allowlist" | "disabled";
   responsePrefix?: string;
+  /** Nothing marks a LINE turn as coalesced, so "batched" has nothing to select. */
+  replyToMode?: Exclude<ReplyToMode, "batched">;
   streaming?: ChannelDeliveryStreamingConfig;
   mediaMaxMb?: number;
   historyLimit?: number;
