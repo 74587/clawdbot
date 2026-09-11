@@ -143,14 +143,6 @@ export function renderChat(props: ChatProps) {
   const pendingInputs = props.historyState ? getChatPendingInputs(props.historyState) : undefined;
   const requestUpdate = props.onRequestUpdate ?? (() => {});
   const canCompose = props.canSend;
-  const showModelSetupSplash =
-    props.modelSetupRequired === true &&
-    props.messages.length === 0 &&
-    (pendingInputs?.page.items.length ?? 0) === 0 &&
-    props.toolMessages.length === 0 &&
-    props.streamSegments.length === 0 &&
-    !props.stream &&
-    props.queue.length === 0;
   const openImage = props.onOpenImage
     ? (item: ImageLightboxItem, requestVersion?: number) =>
         requestVersion === undefined
@@ -454,7 +446,7 @@ export function renderChat(props: ChatProps) {
                     .agentId=${props.currentAgentId}
                     .presented=${props.presented ?? true}
                   ></openclaw-plugin-contributions>
-                  ${showModelSetupSplash ? nothing : chatColumnFooter}
+                  ${chatColumnFooter}
                 </div>
               </div>
             </div>
