@@ -15,6 +15,7 @@ export {
   ensureOpenClawAgentDatabaseSchema,
   openOpenClawAgentDatabase,
   resolveOpenClawAgentSqlitePath,
+  withOpenClawAgentDatabaseAsync,
 } from "../state/openclaw-agent-db.js";
 export { withOpenClawAgentDatabaseReadOnly } from "../state/openclaw-agent-db-readonly.js";
 export { assertOpenClawAgentDatabaseForMaintenance } from "../state/openclaw-agent-db-maintenance.js";
