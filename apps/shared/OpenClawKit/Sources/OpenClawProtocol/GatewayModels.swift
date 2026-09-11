@@ -9465,6 +9465,7 @@ public struct PluginCatalogEntry: Codable, Sendable {
     public let featuredat: Int?
     public let order: Double?
     public let hasicon: Bool?
+    public let channelids: [String]?
     public let install: PluginCatalogInstallAction?
     public let error: String?
     public let categories: [String]?
@@ -9488,6 +9489,7 @@ public struct PluginCatalogEntry: Codable, Sendable {
         featuredat: Int? = nil,
         order: Double? = nil,
         hasicon: Bool? = nil,
+        channelids: [String]? = nil,
         install: PluginCatalogInstallAction? = nil,
         error: String? = nil,
         categories: [String]? = nil,
@@ -9510,6 +9512,7 @@ public struct PluginCatalogEntry: Codable, Sendable {
         self.featuredat = featuredat
         self.order = order
         self.hasicon = hasicon
+        self.channelids = channelids
         self.install = install
         self.error = error
         self.categories = categories
@@ -9534,6 +9537,7 @@ public struct PluginCatalogEntry: Codable, Sendable {
         case featuredat = "featuredAt"
         case order
         case hasicon = "hasIcon"
+        case channelids = "channelIds"
         case install
         case error
         case categories
