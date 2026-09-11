@@ -44,6 +44,7 @@ import { cleanupStaleManagedServiceUpdateHandoffs } from "../infra/update-manage
 import type { UpdateRunRecord } from "../infra/update-run-record.js";
 import type { UpdateRunResult } from "../infra/update-runner.js";
 import * as windowsPrivateDirectory from "../infra/windows-private-directory.js";
+import { flushLogger, resetLogger, setLoggerOverride } from "../logging/logger.js";
 import { CLAWHUB_INSTALL_ERROR_CODE } from "../plugins/clawhub-error-codes.js";
 import { ManagedPluginLifecycleError } from "../plugins/management-lifecycle-error.js";
 import { OPENCLAW_AGENT_SCHEMA_VERSION } from "../state/openclaw-agent-db-contract.js";
@@ -5237,6 +5238,111 @@ describe("update-cli", () => {
     expect(pluginOutcome(jsonOutput)?.status).toBe("skipped");
   });
 
+  it.each([
+    { json: false, repaired: false, version: "1.0.0" },
+    { json: true, repaired: false, version: "1.0.0" },
+    { json: true, repaired: true, version: "1.0.0" },
+    { json: true, repaired: false, version: undefined },
+  ])(
+    "reports unavailable retained plugin targets without failing core ($json, repaired=$repaired, version=$version)",
+    async ({ json, repaired, version }) => {
+      const message =
+        'Retained plugin "demo" at 1.0.0: requested @example/demo@2.0.0 for core 9999.0.0 could not be resolved: No matching version found. Run `openclaw plugins update demo` when the package or registry is available.';
+      const installPath = createCaseDir("unavailable-target");
+      await fs.mkdir(installPath, { recursive: true });
+      await writeJsonFixture(path.join(installPath, "package.json"), {
+        name: "@example/demo",
+        version: "1.0.0",
+      });
+      const record: PluginInstallRecord = {
+        source: "npm",
+        spec: "@example/demo@2.0.0",
+        installPath,
+        version,
+      };
+      const records = { demo: record };
+      const warningLogPath = path.join(installPath, "update-warning.log");
+      setLoggerOverride({ level: "warn", file: warningLogPath });
+      onTestFinished(async () => {
+        await flushLogger();
+        resetLogger();
+      });
+      loadInstalledPluginIndexInstallRecords.mockResolvedValue(records);
+      mockNpmPluginOutcomes(
+        [
+          {
+            pluginId: "demo",
+            status: "unchanged",
+            code: "plugin-target-unavailable",
+            currentVersion: "1.0.0",
+            message,
+          },
+        ],
+        false,
+        { ...baseConfig, plugins: { ...baseConfig.plugins, installs: records } },
+      );
+      runPostCorePluginConvergenceSpy.mockResolvedValueOnce({
+        ...postCoreConvergenceResult(),
+        installRecords: repaired ? { demo: { ...record, version: "2.0.0" } } : records,
+      });
+
+      await updateCommand({ yes: true, json, restart: false });
+
+      expect(defaultRuntime.exit).not.toHaveBeenCalledWith(1);
+      await flushLogger();
+      const logEntries = fsSync.existsSync(warningLogPath)
+        ? (await fs.readFile(warningLogPath, "utf8"))
+            .trim()
+            .split("\n")
+            .map((line): unknown => JSON.parse(line))
+        : [];
+      const retainedWarning = expect.objectContaining({
+        message,
+        _meta: expect.objectContaining({ logLevelName: "WARN" }),
+      });
+      if (repaired) {
+        expect(logEntries).not.toContainEqual(retainedWarning);
+      } else {
+        expect(logEntries).toContainEqual(retainedWarning);
+      }
+      if (json) {
+        const result = lastWriteJsonCall();
+        if (repaired) {
+          expect(result).toMatchObject({ status: "ok", postUpdate: { plugins: { warnings: [] } } });
+          return;
+        }
+        expect(result).toMatchObject({
+          status: "ok",
+          postUpdate: {
+            plugins: {
+              status: "warning",
+              warnings: [
+                expect.objectContaining({
+                  pluginId: "demo",
+                  reason: "plugin-target-unavailable",
+                  message,
+                }),
+              ],
+            },
+          },
+          run: {
+            status: "succeeded",
+            steps: expect.arrayContaining([
+              expect.objectContaining({
+                step: expect.stringMatching(/^warning:/),
+                status: "completed",
+                detail: expect.stringContaining(message),
+              }),
+            ]),
+          },
+        });
+        expect(result).not.toHaveProperty("reason", "plugin-target-unavailable");
+      } else {
+        expect(stripAnsi(getLogOutput())).toContain(message);
+      }
+    },
+  );
+
   it("marks blocked ClawHub update skips as post-update warnings", async () => {
     const trustWarning =
       "╭─ BLOCKED - ClawHub flagged this release as malicious ─╮\n" +
@@ -6919,18 +7025,18 @@ describe("update-cli", () => {
     },
   );
 
-  it.each(["unavailable plugin", "changed service owner"])(
+  it.each(["incompatible plugin", "changed service owner"])(
     "refuses %s before already-current convergence",
     async (failure) => {
       const root = await mockPackageInstallAtCaseDir();
       readPackageVersion.mockResolvedValue("2026.9.3");
       primeNpmChannelTag("latest", "2026.9.3");
       mockRunningManagedGateway(["node", path.join(root, "dist", "index.js"), "gateway", "run"]);
-      if (failure === "unavailable plugin") {
+      if (failure === "incompatible plugin") {
         pluginAvailabilityPreflight.mockRejectedValueOnce(
           new updateCliShared.UpdatePreMutationError(
-            "plugin-target-unavailable",
-            "Plugin target unavailable",
+            "plugin-incompatible",
+            "Installed plugin incompatible",
           ),
         );
       } else {
@@ -6942,9 +7048,7 @@ describe("update-cli", () => {
       expect(lastWriteJsonCall()).toMatchObject({
         status: "error",
         reason:
-          failure === "unavailable plugin"
-            ? "plugin-target-unavailable"
-            : "managed-service-preflight",
+          failure === "incompatible plugin" ? "plugin-incompatible" : "managed-service-preflight",
       });
       expectNoSideEffects(
         updateNpmInstalledPlugins,
@@ -12819,7 +12923,7 @@ describe("update-cli", () => {
     "reports plugin admission refusal without changing the serving install (dryRun=%s)",
     async (dryRun) => {
       const detail =
-        'Plugin "example" requires @openclaw/example@1.0.1: Package not found on npm. Retry later.';
+        'Plugin "example" (installed 1.0.0) requires plugin API <1.0.1: no compatible replacement. Disable the plugin or wait.';
       const sentinel = await runControlPlaneUpdate({
         expectedExitCode: 1,
         meta: {
@@ -12831,14 +12935,14 @@ describe("update-cli", () => {
           await mockPackageInstallAtCaseDir();
           const { UpdatePreMutationError } = await import("./update-cli/shared.js");
           pluginAvailabilityPreflight.mockRejectedValue(
-            new UpdatePreMutationError("plugin-target-unavailable", detail),
+            new UpdatePreMutationError("plugin-incompatible", detail),
           );
         },
       });
 
       expect(lastWriteJsonCall()).toMatchObject({
         status: "error",
-        reason: "plugin-target-unavailable",
+        reason: "plugin-incompatible",
       });
       expect(getErrorOutput()).toContain(detail);
       expectNoSideEffects(serviceStop, serviceStart, serviceRestart, replaceConfigFile);
@@ -12847,7 +12951,7 @@ describe("update-cli", () => {
       if (dryRun) {
         expect(sentinel).toBeNull();
       } else {
-        expect(sentinel?.payload.stats?.reason).toBe("plugin-target-unavailable");
+        expect(sentinel?.payload.stats?.reason).toBe("plugin-incompatible");
       }
     },
   );
