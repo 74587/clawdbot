@@ -241,6 +241,38 @@ beforeEach(() => {
 });
 
 describe("mutable update execution", () => {
+  it.each(
+    (["package", "git"] as const).flatMap((kind) =>
+      [30_000, 600_000].map((timeoutMs) => ({ kind, timeoutMs })),
+    ),
+  )(
+    "passes the configured $timeoutMs ms step budget to $kind candidate validation",
+    async ({ kind, timeoutMs }) => {
+      const runStagedUpdate = async ({
+        validateCandidate,
+      }: {
+        validateCandidate?: (root: string) => Promise<unknown>;
+      }) => {
+        expect(validateCandidate).toBeTypeOf("function");
+        await validateCandidate?.("/candidate");
+        return successfulUpdate;
+      };
+      mocks.runPackageUpdate.mockImplementation(runStagedUpdate);
+      mocks.runGitUpdate.mockImplementation(runStagedUpdate);
+
+      const execution = await executeMutableUpdate({
+        ...executionParams(kind),
+        timeoutMs,
+        updateStepTimeoutMs: timeoutMs,
+      });
+
+      expect(execution?.result.status).toBe("ok");
+      expect(mocks.validateCanary).toHaveBeenCalledOnce();
+      expect(mocks.validateCanary.mock.calls[0]?.[0].root).toBe("/candidate");
+      expect(mocks.validateCanary.mock.calls[0]?.[0].timeoutMs).toBe(timeoutMs);
+    },
+  );
+
   it.each(["package", "staged", "git"] as const)(
     "refuses an unsupported native receiver before activation: %s",
     async (route) =>

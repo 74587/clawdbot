@@ -7,6 +7,7 @@ import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { Command } from "commander";
 import { afterAll, afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { PLUGIN_CAPABILITY_CONSENT_REQUIRED } from "../../packages/gateway-protocol/src/capability-consent-error-details.js";
@@ -406,11 +407,20 @@ vi.mock("../process/exec.js", async () => {
   return {
     // The real snapshot worker has separate WAL/source-inode boundary coverage.
     // Retain real rehearsal config projection and drift checks in this CLI fixture.
-    runCommandBuffered: async () => ({
-      code: 0,
-      stdout: Buffer.from(JSON.stringify({ versions: [], pluginPaths: {} })),
-      stderr: Buffer.alloc(0),
-    }),
+    runCommandBuffered: async (_argv: string[], options: { input: string }) => {
+      const input: unknown = JSON.parse(options.input);
+      const mode = isRecord(input) ? input.mode : undefined;
+      if (mode !== "inventory" && mode !== "snapshot") {
+        throw new Error("Unexpected update state worker mode");
+      }
+      return {
+        code: 0,
+        stdout: Buffer.from(
+          JSON.stringify(mode === "inventory" ? [] : { versions: [], pluginPaths: {} }),
+        ),
+        stderr: Buffer.alloc(0),
+      };
+    },
     // Native effects/results remain fixture-owned. Preserve real child admission,
     // PID binding and settlement instead of bypassing the update executor.
     runCommandWithTimeout: async (...[argv, options]: Parameters<typeof commandTransport.run>) => {
@@ -466,14 +476,14 @@ vi.mock("./update-cli/update-command-post-plugin-readiness.js", async (importOri
 });
 
 vi.mock("../utils.js", async (importOriginal) => {
-  const [actual, { isRecord }] = await Promise.all([
+  const [actual, { isRecord: isRecordGuard }] = await Promise.all([
     importOriginal<typeof import("../utils.js")>(),
     import("@openclaw/normalization-core/record-coerce"),
   ]);
   return {
     ...actual,
     displayString: (input: string) => input,
-    isRecord,
+    isRecord: isRecordGuard,
     pathExists: (...args: unknown[]) => pathExists(...args),
     resolveConfigDir: () => "/tmp/openclaw-config",
     sleep: vi.fn(async () => undefined),
