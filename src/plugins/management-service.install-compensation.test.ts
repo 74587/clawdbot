@@ -417,7 +417,7 @@ describe("managed plugin install transactions", () => {
         });
         expect(transaction.commit).not.toHaveBeenCalled();
       } else {
-        const warning = "Plugin install committed, but backup cleanup failed. Restart is required.";
+        const warning = "Plugin install committed, but backup cleanup failed.";
         await expect(installed).resolves.toMatchObject({ ok: true, warnings: [warning] });
         expect(runtime.log).toHaveBeenCalledWith(warning);
         expect(transaction.rollback).not.toHaveBeenCalled();
