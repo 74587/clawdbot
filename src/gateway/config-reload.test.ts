@@ -40,6 +40,7 @@ import {
   createRuntimeConfigWriteApplication,
 } from "../config/runtime-write-application.js";
 import type { PluginInstallRecord } from "../config/types.plugins.js";
+import { createTestPluginApi } from "../plugin-sdk/plugin-test-api.js";
 import {
   clearCurrentPluginMetadataSnapshot,
   getCurrentPluginMetadataSnapshotState,
@@ -57,10 +58,12 @@ import {
   runOutsidePluginCache,
   withPluginCache,
 } from "../plugins/plugin-cache.js";
+import type { OpenClawPluginDefinition } from "../plugins/plugin-definition.types.js";
 import { capturePluginGenerationArtifact } from "../plugins/plugin-generation-artifact.js";
 import { PluginInstance } from "../plugins/plugin-instance.js";
 import { withPluginLifecycleLease } from "../plugins/plugin-lifecycle-lease.js";
 import { createPluginMetadataSnapshotFixture } from "../plugins/plugin-metadata.test-support.js";
+import { loadPluginPublicArtifactModuleSync } from "../plugins/public-surface-loader.js";
 import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../plugins/runtime.js";
 import {
   captureGatewayRootWorkAdmissionContinuationScope,
@@ -316,6 +319,64 @@ describe("diffConfigPaths", () => {
 
 describe("buildGatewayReloadPlan", () => {
   const emptyRegistry = createTestRegistry([]);
+  it("reloads the registered Browser service for control policy without restarting the Gateway", () => {
+    const { default: browser } = loadPluginPublicArtifactModuleSync<{
+      default: OpenClawPluginDefinition;
+    }>({
+      pluginRoot: nodePath.resolve("extensions/browser"),
+      artifactBasename: "index.ts",
+      origin: "bundled",
+    });
+    if (!browser.register) {
+      throw new Error("Browser plugin must expose its registration entry point");
+    }
+    const registry = createTestRegistry([]);
+    browser.register(
+      createTestPluginApi({
+        runtime: {
+          state: {
+            openSyncKeyedStore: () => ({ entries: () => [] }),
+            openKeyedStore: vi.fn(),
+          },
+        } as never,
+        registerService(service) {
+          registry.services.push({
+            pluginId: "browser",
+            source: "test",
+            origin: "bundled",
+            service,
+          });
+        },
+      }),
+    );
+    registry.reloads.push({
+      pluginId: "browser",
+      source: "test",
+      registration: browser.reload ?? {},
+    });
+    setActivePluginRegistry(registry);
+    try {
+      for (const path of [
+        "browser.enabled",
+        "browser.evaluateEnabled",
+        "browser.ssrfPolicy.allowedHostnames",
+      ]) {
+        const plan = buildGatewayReloadPlan([path]);
+        expect(plan.restartGateway, path).toBe(false);
+        expect(plan.restartServices, path).toEqual(new Set(["browser-control"]));
+        expect(plan.reloadPlugins, path).toBe(false);
+        expect(plan.restartChannels.size, path).toBe(0);
+      }
+      const profiles = buildGatewayReloadPlan(["browser.profiles.openclaw.headless"]);
+      expect(profiles.restartGateway).toBe(false);
+      expect(profiles.restartServices).toEqual(new Set());
+      expect(
+        buildGatewayReloadPlan(["browser.extensionRelay.allowLegacyAuth"]).restartGateway,
+      ).toBe(true);
+    } finally {
+      setActivePluginRegistry(emptyRegistry);
+    }
+  });
   it("selects only attached service owners for their declared config and preserves unknown restart policy", () => {
     const serviceRegistry = createTestRegistry([]);
     serviceRegistry.services.push({
