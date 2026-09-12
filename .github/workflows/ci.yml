@@ -2621,7 +2621,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-chromium-1.62.1
+          key: ${{ runner.os }}-playwright-chromium-1.63.0
 
       - &install_playwright_chromium
         name: Install Playwright Chromium
@@ -3449,7 +3449,7 @@ jobs:
         # Keep the runner toolchain owned by the workflow; cache publication is gated separately.
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27.0"
+          go-version: "1.27.1"
           cache: false
 
       - name: Resolve docs i18n Go cache
@@ -3483,7 +3483,7 @@ jobs:
 
       - name: Verify docs i18n Go toolchain
         if: matrix.requires_go == true
-        run: test "$(go env GOVERSION)" = "go1.27.0"
+        run: test "$(go env GOVERSION)" = "go1.27.1"
 
       - name: Configure Node test resources
         # Scale the in-process Vitest worker budget with the cores the job

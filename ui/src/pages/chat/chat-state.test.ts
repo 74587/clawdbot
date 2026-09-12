@@ -4205,6 +4205,96 @@ describe("refreshChatMetadata", () => {
     } as unknown as ChatPageHost;
   }
 
+  it.each([
+    { pickerPending: false, scopedAfterGlobal: false },
+    { pickerPending: true, scopedAfterGlobal: false },
+    { pickerPending: false, scopedAfterGlobal: true },
+  ])(
+    "converges catalog invalidation with pending picker=$pickerPending and scoped follow-up=$scopedAfterGlobal",
+    async ({ pickerPending, scopedAfterGlobal }) => {
+      const prepared = { id: "model", name: "Model", provider: "test", contextWindow: 8_192 };
+      const discovered = { ...prepared, contextWindow: 262_144 };
+      const catalog = createDeferred<{ models: (typeof prepared)[] }>();
+      let invalidated = false;
+      const request = vi.fn((method: string) =>
+        method === "chat.metadata"
+          ? Promise.resolve({ commands: [] })
+          : invalidated
+            ? catalog.promise
+            : Promise.resolve({ models: [prepared] }),
+      );
+      const state = createMetadataState(request);
+      const refreshSessions = vi.spyOn(state.sessions, "refresh").mockResolvedValue(undefined);
+      try {
+        await refreshChatMetadata(state);
+        expect(refreshSessions).not.toHaveBeenCalled();
+        const picker = pickerPending ? refreshChatModelCatalogOnDemand(state) : undefined;
+        invalidated = true;
+        invalidateChatMetadataStore(state.client!);
+        if (scopedAfterGlobal) {
+          invalidateChatMetadataStore(state.client!, {
+            agentId: "work",
+            sessionKey: state.sessionKey,
+          });
+        }
+        expect(refreshSessions).not.toHaveBeenCalled();
+        catalog.resolve({ models: [discovered] });
+        await vi.waitFor(() => expect(refreshSessions).toHaveBeenCalledOnce());
+        await picker;
+
+        expect(state.chatModelCatalog).toEqual([discovered]);
+        expect(refreshSessions).toHaveBeenCalledWith(
+          expect.objectContaining({ agentId: "work", force: true }),
+        );
+      } finally {
+        retireChatMetadataRequests(state);
+      }
+    },
+  );
+
+  it.each(["session", "agent", "connection", "superseded"])(
+    "does not refresh session facts after an invalidated catalog loses its %s owner",
+    async (transition) => {
+      const pending = createDeferred<{ models: [] }>();
+      const replacement = createDeferred<{ models: [] }>();
+      let catalogReads = 0;
+      const request = vi.fn((method: string) =>
+        method === "chat.metadata"
+          ? Promise.resolve({ commands: [] })
+          : ++catalogReads === 1
+            ? Promise.resolve({ models: [] })
+            : catalogReads === 2
+              ? pending.promise
+              : replacement.promise,
+      );
+      const state = createMetadataState(request, {
+        sessionKey: "global",
+        assistantAgentId: "work",
+      });
+      const refreshSessions = vi.spyOn(state.sessions, "refresh").mockResolvedValue(undefined);
+      try {
+        await refreshChatMetadata(state);
+        invalidateChatMetadataStore(state.client!);
+        const refresh = refreshChatMetadata(state);
+        if (transition === "session") {
+          state.sessionKey = "agent:work:other";
+        } else if (transition === "agent") {
+          state.assistantAgentId = "main";
+        } else if (transition === "connection") {
+          state.connectionEpoch += 1;
+        } else {
+          invalidateChatMetadataStore(state.client!);
+        }
+        pending.resolve({ models: [] });
+        await refresh;
+        expect(refreshSessions).not.toHaveBeenCalled();
+      } finally {
+        retireChatMetadataRequests(state);
+        replacement.resolve({ models: [] });
+      }
+    },
+  );
+
   it.each(["metadata", "picker"] as const)(
     "fences a late %s result across same-client reconnect",
     async (kind) => {
@@ -4262,6 +4352,7 @@ describe("refreshChatMetadata", () => {
     async (reason) => {
       const request = vi.fn().mockResolvedValue({ commands: [], models: [] });
       const state = createMetadataState(request);
+      const refreshSessions = vi.spyOn(state.sessions, "refresh").mockResolvedValue(undefined);
       await refreshChatMetadata(state);
       for (const [key, eventReason] of [
         ["agent:work:other", reason],
@@ -4282,6 +4373,8 @@ describe("refreshChatMetadata", () => {
       await vi.waitFor(() =>
         expect(request.mock.calls.filter(([method]) => method === "chat.metadata")).toHaveLength(2),
       );
+      await refreshChatMetadata(state);
+      expect(refreshSessions).not.toHaveBeenCalled();
       retireChatMetadataRequests(state);
     },
   );
