@@ -307,10 +307,8 @@ export function createPreparedModelCatalogWorker(
       }, PREPARED_MODEL_CATALOG_WORKER_GENERATION_POLL_MS);
       generationPoll.unref();
       const { input } = workerInput;
-      const providerScope =
-        command.kind === "catalog" && command.providerIds
-          ? command.providerIds
-          : [...workerInput.providerIds, ...(command.providerIds ?? [])];
+      // Worker reconstruction consumes startup auth facts even for a scoped catalog request.
+      const providerScope = [...workerInput.providerIds, ...(command.providerIds ?? [])];
       const capture = withPluginRuntimeGenerationScope(
         { metadataSnapshot, pluginRegistry: params.pluginRegistry },
         () =>
