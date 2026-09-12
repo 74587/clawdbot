@@ -193,7 +193,7 @@ export async function refreshChatMetadata(host: ChatPageHost): Promise<void> {
   // Only accepted store publications update availability or fetch errors.
   const metadata = loadChatMetadata(binding.client, binding.scope).catch(() => undefined);
   const version = binding.version;
-  const catalog = loadChatModelCatalog(host, binding).then(async (accepted) => {
+  const catalog = loadChatModelCatalog(host, binding).then((accepted) => {
     if (
       binding.sessionFactsInvalidated &&
       accepted &&
@@ -201,7 +201,7 @@ export async function refreshChatMetadata(host: ChatPageHost): Promise<void> {
       binding.version === version
     ) {
       binding.sessionFactsInvalidated = false;
-      await refreshCurrentChatSessionList(host).catch(() => undefined);
+      host.sessions.invalidate();
     }
   });
   await Promise.all([metadata, catalog]);

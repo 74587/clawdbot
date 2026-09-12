@@ -1,7 +1,9 @@
+import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { render, type ReactiveController, type ReactiveControllerHost } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
+import type { GatewaySessionRow } from "../../api/types.ts";
 import * as assistantIdentity from "../../app/assistant-identity.ts";
 import { createChatSubmissions } from "../../app/chat-submissions.ts";
 import type { ApplicationContext } from "../../app/context.ts";
@@ -13,6 +15,11 @@ import {
   SLASH_COMMANDS,
 } from "../../lib/chat/commands.ts";
 import { extractText } from "../../lib/chat/message-extract.ts";
+import {
+  createGatewayHarness,
+  createTestSessionCapability,
+  sessionsResult,
+} from "../../lib/sessions/session-capability.test-support.ts";
 import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
 import type { ChatHistoryResult } from "./chat-history-snapshot.ts";
 import { loadChatHistory } from "./chat-history.ts";
@@ -4205,6 +4212,102 @@ describe("refreshChatMetadata", () => {
     } as unknown as ChatPageHost;
   }
 
+  it.each(["settled", "catalog-first", "selection-first"])(
+    "keeps foreground session selection through background catalog refresh (%s)",
+    async (order) => {
+      vi.useFakeTimers();
+      const catalog = createDeferred<{ models: [] }>();
+      const mainList = createDeferred<ReturnType<typeof sessionsResult>>();
+      let revision = 1;
+      let catalogInvalidated = false;
+      let holdMain = false;
+      const request = vi.fn(async (method: string, params?: unknown) => {
+        if (method === "models.list") {
+          return catalogInvalidated ? catalog.promise : { models: [] };
+        }
+        if (method !== "sessions.list") {
+          return { commands: [] };
+        }
+        const args = asOptionalRecord(params);
+        if (args?.agentId === "main" && holdMain) {
+          holdMain = false;
+          return mainList.promise;
+        }
+        const row: GatewaySessionRow = {
+          key: `agent:${String(args?.agentId)}:kept`,
+          kind: "direct",
+          label: `Kept ${revision}`,
+          updatedAt: revision,
+          ...(args?.includeLastMessage ? { lastMessagePreview: "Saved preview" } : {}),
+        };
+        return sessionsResult(
+          args?.search === "keep"
+            ? [row]
+            : [row, { key: "agent:work:other", kind: "direct", updatedAt: revision }],
+          revision,
+        );
+      });
+      const client = createTestGatewayClient(request);
+      const { gateway } = createGatewayHarness(client);
+      const sessions = createTestSessionCapability(gateway);
+      const state = createMetadataState(request, {
+        client,
+        sessions,
+        sessionKey: "agent:main:retained",
+      });
+      const workQuery = { agentId: "work", search: "keep", includeLastMessage: true };
+      const oldMain = sessionsResult(
+        [{ key: "agent:main:kept", kind: "direct", label: "Main", updatedAt: 1 }],
+        1,
+      );
+      let oldRefresh: Promise<void> | undefined;
+      let selection: Promise<void> | undefined;
+      let refresh: Promise<void> | undefined;
+      try {
+        await refreshChatMetadata(state);
+        await sessions.refresh({ agentId: "main" });
+        if (order === "settled") {
+          await sessions.refresh(workQuery);
+        } else {
+          holdMain = true;
+          oldRefresh = sessions.refresh({ agentId: "main", force: true });
+          selection = sessions.refresh(workQuery);
+        }
+        catalogInvalidated = true;
+        invalidateChatMetadataStore(client);
+        refresh = refreshChatMetadata(state);
+        if (order === "selection-first") {
+          mainList.resolve(oldMain);
+          await Promise.all([oldRefresh, selection]);
+          expect(sessions.state.agentId).toBe("work");
+        }
+        revision = 2;
+        catalog.resolve({ models: [] });
+        await vi.advanceTimersByTimeAsync(1_000);
+        mainList.resolve(oldMain);
+        await Promise.all([oldRefresh, selection, refresh]);
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(sessions.state.agentId).toBe("work");
+        expect(sessions.state.result?.sessions).toEqual([
+          {
+            key: "agent:work:kept",
+            kind: "direct",
+            label: "Kept 2",
+            lastMessagePreview: "Saved preview",
+            updatedAt: 2,
+          },
+        ]);
+      } finally {
+        retireChatMetadataRequests(state);
+        sessions.dispose();
+        mainList.resolve(oldMain);
+        catalog.resolve({ models: [] });
+        await Promise.allSettled([oldRefresh, selection, refresh]);
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it.each([
     { pickerPending: false, scopedAfterGlobal: false },
     { pickerPending: true, scopedAfterGlobal: false },
@@ -4224,10 +4327,12 @@ describe("refreshChatMetadata", () => {
             : Promise.resolve({ models: [prepared] }),
       );
       const state = createMetadataState(request);
-      const refreshSessions = vi.spyOn(state.sessions, "refresh").mockResolvedValue(undefined);
+      const invalidateSessions = vi
+        .spyOn(state.sessions, "invalidate")
+        .mockImplementation(() => {});
       try {
         await refreshChatMetadata(state);
-        expect(refreshSessions).not.toHaveBeenCalled();
+        expect(invalidateSessions).not.toHaveBeenCalled();
         const picker = pickerPending ? refreshChatModelCatalogOnDemand(state) : undefined;
         invalidated = true;
         invalidateChatMetadataStore(state.client!);
@@ -4237,15 +4342,12 @@ describe("refreshChatMetadata", () => {
             sessionKey: state.sessionKey,
           });
         }
-        expect(refreshSessions).not.toHaveBeenCalled();
+        expect(invalidateSessions).not.toHaveBeenCalled();
         catalog.resolve({ models: [discovered] });
-        await vi.waitFor(() => expect(refreshSessions).toHaveBeenCalledOnce());
+        await vi.waitFor(() => expect(invalidateSessions).toHaveBeenCalledOnce());
         await picker;
 
         expect(state.chatModelCatalog).toEqual([discovered]);
-        expect(refreshSessions).toHaveBeenCalledWith(
-          expect.objectContaining({ agentId: "work", force: true }),
-        );
       } finally {
         retireChatMetadataRequests(state);
       }
@@ -4271,7 +4373,9 @@ describe("refreshChatMetadata", () => {
         sessionKey: "global",
         assistantAgentId: "work",
       });
-      const refreshSessions = vi.spyOn(state.sessions, "refresh").mockResolvedValue(undefined);
+      const invalidateSessions = vi
+        .spyOn(state.sessions, "invalidate")
+        .mockImplementation(() => {});
       try {
         await refreshChatMetadata(state);
         invalidateChatMetadataStore(state.client!);
@@ -4287,7 +4391,7 @@ describe("refreshChatMetadata", () => {
         }
         pending.resolve({ models: [] });
         await refresh;
-        expect(refreshSessions).not.toHaveBeenCalled();
+        expect(invalidateSessions).not.toHaveBeenCalled();
       } finally {
         retireChatMetadataRequests(state);
         replacement.resolve({ models: [] });
@@ -4352,7 +4456,9 @@ describe("refreshChatMetadata", () => {
     async (reason) => {
       const request = vi.fn().mockResolvedValue({ commands: [], models: [] });
       const state = createMetadataState(request);
-      const refreshSessions = vi.spyOn(state.sessions, "refresh").mockResolvedValue(undefined);
+      const invalidateSessions = vi
+        .spyOn(state.sessions, "invalidate")
+        .mockImplementation(() => {});
       await refreshChatMetadata(state);
       for (const [key, eventReason] of [
         ["agent:work:other", reason],
@@ -4374,7 +4480,7 @@ describe("refreshChatMetadata", () => {
         expect(request.mock.calls.filter(([method]) => method === "chat.metadata")).toHaveLength(2),
       );
       await refreshChatMetadata(state);
-      expect(refreshSessions).not.toHaveBeenCalled();
+      expect(invalidateSessions).not.toHaveBeenCalled();
       retireChatMetadataRequests(state);
     },
   );
