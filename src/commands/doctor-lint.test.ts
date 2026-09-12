@@ -787,7 +787,7 @@ describe("runDoctorLintCli", () => {
       ).resolves.toBe(1);
       expect(JSON.parse(String(stdout.mock.calls.at(-1)?.[0]))).toMatchObject({
         ok: false,
-        checksRun: 1,
+        checksRun: 2,
         findings: [
           {
             checkId: "memory-core/managed-local-embedding-setup",
