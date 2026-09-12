@@ -11,6 +11,7 @@ import {
   CONTROL_PLANE_UPDATE_SENTINEL_META_ENV,
   UPDATE_RUN_ID_ENV,
 } from "./update-control-plane-sentinel.js";
+import { UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH_ENV } from "./update-doctor-result.js";
 import {
   POST_CORE_UPDATE_ENV,
   POST_CORE_UPDATE_CHANNEL_ENV,
@@ -164,6 +165,7 @@ export async function prepareUpdateCandidateRehearsal(params: {
       ...SUPERVISOR_HINT_ENV_VARS,
       CONTROL_PLANE_UPDATE_SENTINEL_META_ENV,
       UPDATE_RUN_ID_ENV,
+      UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH_ENV,
       "OPENCLAW_UPDATE_RUN_HANDOFF",
       POST_CORE_UPDATE_ENV,
       POST_CORE_UPDATE_CHANNEL_ENV,
