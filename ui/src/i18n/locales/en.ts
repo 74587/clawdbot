@@ -5054,6 +5054,8 @@ export const en: TranslationMap & {
       sessionMenuMany: "Actions for {count} sessions",
       toolActivity: "Using {tool}",
       catalogDiscoveryHelp: "{error}. Configure native session discovery in Settings > Plugins.",
+      catalogPaginationFailed: "Session catalog returned a repeated page cursor",
+      catalogPageMissingHost: "Session catalog page did not include the requested host",
     },
     welcome: {
       hintBeforeShortcut: "Type a message below ·",
