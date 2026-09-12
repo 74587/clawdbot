@@ -8,7 +8,6 @@ import {
   createNewSessionPageE2eSuite,
   createdSessionListResult,
   installMockGateway,
-  openEnvironmentPicker,
 } from "./new-session-page.test-support.ts";
 
 const suite = createNewSessionPageE2eSuite();
@@ -39,8 +38,9 @@ suite.define(() => {
 
         await page.goto(`${suite.server.baseUrl}new`);
         await gateway.waitForRequest("environments.list");
+        const trigger = page.locator("#new-session-where-trigger");
         const picker = page.locator("wa-popover.new-session-page__where-popover");
-        await openEnvironmentPicker(page);
+        await trigger.click();
         await picker.getByRole("button", { name: "aws", exact: true }).click();
         await picker.locator('[data-value="cloud:aws"]').hover();
         await picker.locator('[data-value="machine:standard"]').waitFor();
@@ -76,8 +76,9 @@ suite.define(() => {
         const linux = picker.locator('[data-value="os:linux"]');
         await picker.locator('[data-value="cloud:aws"]').hover();
         await linux.waitFor();
+        expect(await linux.evaluate((element) => element.tagName)).toBe("SPAN");
+        expect(await linux.getAttribute("aria-pressed")).toBeNull();
         expect(await linux.textContent()).toBe("Linux");
-        expect(await picker.getByRole("button", { name: "Linux", exact: true }).count()).toBe(0);
         for (const os of ["macos", "windows"]) {
           const option = picker.locator(`[data-value="os:${os}"]`);
           expect(await option.count()).toBe(0);
