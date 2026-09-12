@@ -6692,7 +6692,18 @@ describe("update-cli", () => {
         error: expect.stringContaining("openclaw-agent.sqlite"),
         result: expect.objectContaining({
           reason: "database-schema-preflight",
-          steps: [],
+          steps: [
+            expect.objectContaining({
+              name: "database-schema-preflight",
+              exitCode: 1,
+              failureFacts: [
+                expect.objectContaining({
+                  check: "database-schema-preflight",
+                  code: "database-schema-preflight",
+                }),
+              ],
+            }),
+          ],
         }),
       }),
     );
@@ -8072,7 +8083,18 @@ describe("update-cli", () => {
     expect(result).toMatchObject({
       status: "error",
       reason: "unsupported-package-target",
-      steps: [],
+      steps: [
+        expect.objectContaining({
+          name: "unsupported-package-target",
+          exitCode: 1,
+          failureFacts: [
+            expect.objectContaining({
+              check: "unsupported-package-target",
+              code: "unsupported-package-target",
+            }),
+          ],
+        }),
+      ],
     });
     expect(packageInstallCommandCall()?.[0]).toBeUndefined();
     expectNoSideEffects(resolveGlobalManager, replaceConfigFile, runGatewayUpdate);
