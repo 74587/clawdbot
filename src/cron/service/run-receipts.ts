@@ -1,5 +1,10 @@
+import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import { isCronSelfRemovalCurrent, type CronActiveJobMarker } from "../active-jobs.js";
+import {
+  isCronSelfRemovalCurrent,
+  noteActiveCronJobScheduleMutation,
+  type CronActiveJobMarker,
+} from "../active-jobs.js";
 import { describeUnavailableCronAgent } from "../agent-availability.js";
 import { resolveCronJobEffectiveAgentId } from "../agent-id.js";
 import { cronStoreKey } from "../store/key.js";
@@ -112,18 +117,42 @@ export function cronRunReceiptMutationHooks(params: {
   jobId: string;
   ownerChanged: boolean;
   triggerStateChanged: boolean;
+  scheduleChangedJob?: CronJob;
 }): CronStoreTransactionHooks | undefined {
   const ownerHooks = params.ownerChanged ? cronRunReceiptOwnerMutationHooks(params) : undefined;
-  if (!ownerHooks && !params.triggerStateChanged) {
+  if (!ownerHooks && !params.triggerStateChanged && !params.scheduleChangedJob) {
     return undefined;
   }
   return {
     ...ownerHooks,
     beforeWrite: (database) => {
+      if (params.scheduleChangedJob) {
+        const current = loadedCronStoreFromRows(
+          loadCronRows(
+            database,
+            cronStoreKey(params.state.deps.storePath),
+            new Set([params.jobId]),
+          ),
+        ).store.jobs[0];
+        if (current?.state.runningAtMs !== undefined) {
+          // A fresh nonce makes every committed edit a distinct state delta,
+          // even if a passive editor observed a retired run that has since ended.
+          params.scheduleChangedJob.state.runningScheduleChangeId = randomUUID();
+        } else {
+          delete params.scheduleChangedJob.state.runningScheduleChangeId;
+        }
+      }
       if (params.triggerStateChanged) {
         retireServiceCronRunTriggerStateInDatabase({ ...params, database });
       }
       ownerHooks?.beforeWrite?.(database);
+    },
+    afterCommit: () => {
+      ownerHooks?.afterCommit?.();
+      if (params.scheduleChangedJob) {
+        // Retire live ownership with the durable edit, never on a failed write.
+        noteActiveCronJobScheduleMutation(params.jobId);
+      }
     },
   };
 }

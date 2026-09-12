@@ -9,7 +9,6 @@ import {
   type CronActiveJobMarker,
   isCronJobActive,
   noteActiveCronJobRemoval,
-  noteActiveCronJobScheduleMutation,
   noteActiveCronJobTriggerMutation,
   onCronJobInactive,
   requestActiveCronJobCancellation,
@@ -212,6 +211,7 @@ function finalizeUpdatedJob(params: {
       // disabled job can accept a later force run with the same timestamp.
       if (!isCronJobActive(nextJob.id)) {
         Object.assign(nextJob.state, { runningAtMs: undefined, runningReceiptId: undefined });
+        delete nextJob.state.runningScheduleChangeId;
       }
     }
   } else if (isJobEnabled(nextJob) && !hasScheduledNextRunAtMs(nextJob.state.nextRunAtMs)) {
@@ -252,6 +252,7 @@ async function persistUpdatedJob(params: {
     !isDeepStrictEqual(previousJob.state.triggerState, nextJob.state.triggerState) ||
     ((previousJob.payload.kind === "script" || nextJob.payload.kind === "script") &&
       !isDeepStrictEqual(previousJob.payload, nextJob.payload));
+  const scheduleChanged = !cronSchedulingInputsEqual(previousJob, nextJob);
   await persistOrRestore(state, snapshot, {
     suppressScheduledJobId: nextJob.id,
     transactionHooks: cronRunReceiptMutationHooks({
@@ -259,13 +260,9 @@ async function persistUpdatedJob(params: {
       jobId: nextJob.id,
       ownerChanged,
       triggerStateChanged,
+      ...(scheduleChanged ? { scheduleChangedJob: nextJob } : {}),
     }),
   });
-  if (!cronSchedulingInputsEqual(previousJob, nextJob)) {
-    // Mark only committed edits; a failed SQLite write cannot retire the run's
-    // schedule ownership, and idempotent re-saves must not create a new claim.
-    noteActiveCronJobScheduleMutation(nextJob.id);
-  }
   if (isJobEnabled(previousJob) && !isJobEnabled(nextJob)) {
     requestActiveCronJobCancellation(nextJob.id, "Cron job disabled by operator.");
   }

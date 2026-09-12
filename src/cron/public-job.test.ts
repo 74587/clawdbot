@@ -13,6 +13,7 @@ describe("toPublicCronJob", () => {
         startupCatchupAtMs: 2_000,
         pacedNextRunAtMs: 2_000,
         forcePreservedNextRunAtMs: 2_000,
+        runningScheduleChangeId: "pending-run-edit",
       },
     });
 
@@ -23,11 +24,13 @@ describe("toPublicCronJob", () => {
     expect(publicJob.state.startupCatchupAtMs).toBeUndefined();
     expect(publicJob.state.pacedNextRunAtMs).toBeUndefined();
     expect(publicJob.state.forcePreservedNextRunAtMs).toBeUndefined();
+    expect(publicJob.state).not.toHaveProperty("runningScheduleChangeId");
     expect(job.state.queuedAtMs).toBe(1_900);
     expect(job.state.runningReceiptId).toBe("pending-receipt");
     expect(job.state.startupCatchupAtMs).toBe(2_000);
     expect(job.state.pacedNextRunAtMs).toBe(2_000);
     expect(job.state.forcePreservedNextRunAtMs).toBe(2_000);
+    expect(job.state.runningScheduleChangeId).toBe("pending-run-edit");
   });
 
   it("projects script payload fields without exposing scheduler-only state", () => {
