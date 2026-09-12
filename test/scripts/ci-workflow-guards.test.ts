@@ -498,6 +498,7 @@ function runCiManifestFixture(options: {
       for (const file of [
         "scripts/changed-lanes.mts",
         "scripts/lib/changed-path-facts.mjs",
+        "scripts/lib/release-changelog.mjs",
         "scripts/lib/arg-utils.mts",
         "scripts/lib/arg-utils.runtime.mjs",
         "scripts/lib/direct-run.mjs",
@@ -9249,7 +9250,7 @@ server.listen(0, "127.0.0.1", () => {
       'workspace, "fetch", "--no-tags", "origin", target, timeout=120, reclaim_locks=True',
     ]);
     expect(calls.filter((call) => call.includes("timeout="))).toEqual(fetches);
-    expect(enforce.match(/--checkout-git 0 (?:ls-files|diff)/gu)).toHaveLength(3);
+    expect(enforce.match(/--checkout-git 0 (?:ls-files|diff)/gu)).toHaveLength(5);
     expect(`${gate}\n${commit}\n${enforce}`).not.toMatch(
       /\btimeout --|\bgit (?:fetch|rev-parse|cat-file|diff|ls-files|config|add|commit|push)\b/u,
     );
