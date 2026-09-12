@@ -1,5 +1,6 @@
 import path from "node:path";
 import { readConfigFileSnapshot } from "../../config/config.js";
+import { hashConfigRaw } from "../../config/io.read-helpers.js";
 import { resolveStateDir } from "../../config/paths.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { ScheduledTaskAutoStartRecoveryError } from "../../daemon/schtasks-update-recovery.js";
@@ -319,12 +320,13 @@ export async function executeMutableUpdate(
         legacyConfigPlan: params.legacyConfigPlan,
       });
       if (context.legacyConfigPlan) {
-        return { config: context.config, hash: context.configSnapshot.hash };
+        return { config: context.config, hash: hashConfigRaw(context.configSnapshot.raw) };
       }
     }
-    return withOwnedManagedUpdateEnv(env, () =>
+    const snapshot = await withOwnedManagedUpdateEnv(env, () =>
       readConfigFileSnapshot({ skipPluginValidation: true, observe: false }),
     );
+    return { config: snapshot.config, hash: hashConfigRaw(snapshot.raw) };
   };
   const validateCandidate = async (root: string) => {
     assertUpdateCommandRecovery(opts);
@@ -494,11 +496,7 @@ export async function executeMutableUpdate(
       await tryReadJson<unknown>(path.join(params.root, "package.json")),
     );
     schemaVersions = candidateSchemaVersions
-      ? await readUpdateStateSchemaVersions({
-          stateDir: resolveStateDir(env),
-          config,
-          env,
-        })
+      ? await readUpdateStateSchemaVersions({ stateDir: resolveStateDir(env), config, env })
       : undefined;
     if (
       preManagedServiceStop?.running &&

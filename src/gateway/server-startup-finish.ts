@@ -5,6 +5,7 @@ import {
   readConfigFileSnapshotForRuntimeTransaction,
   registerConfigWriteListener,
 } from "../config/io.js";
+import { hashConfigRaw } from "../config/io.read-helpers.js";
 import { isNixMode } from "../config/paths.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { createSubsystemLogger } from "../logging/subsystem.js";
@@ -395,7 +396,7 @@ export async function finishGatewayStartup(params: {
     initialPluginInstallRecords: pluginMetadataSnapshot?.index.installRecords,
     initialCompareConfig: startupLastGoodSnapshot.sourceConfig,
     initialSnapshotRawHash: startupLastGoodSnapshot.exists
-      ? (startupLastGoodSnapshot.hash ?? null)
+      ? hashConfigRaw(startupLastGoodSnapshot.raw)
       : null,
     initialAuthoredConfig: startupLastGoodSnapshot.parsed,
     initialIncludedPaths: startupLastGoodSnapshot.includedPaths ?? [],
