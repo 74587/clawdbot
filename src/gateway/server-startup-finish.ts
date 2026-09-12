@@ -17,6 +17,10 @@ import {
   buildGatewayReloadPlan,
   listConfigReloadRefinementPrefixes,
 } from "./config-reload-plan.js";
+import {
+  indexPluginNodeCapabilitySurfaces,
+  reconcileClientPluginNodeCapabilities,
+} from "./plugin-node-capability.js";
 import { collectGatewayProcessMemoryUsageMb, finishGatewayRestartTrace } from "./restart-trace.js";
 import type { GatewayKernelRuntime } from "./server-kernel-request-runtime.js";
 import { GATEWAY_EVENTS } from "./server-methods-list.js";
@@ -307,6 +311,13 @@ export async function finishGatewayStartup(params: {
             }
             startupState.pendingReason = "startup-sidecars";
             prepared.afterCommit();
+            // Nodes can finish their handshake before deferred plugins attach.
+            const nodeCapabilitySurfaces = indexPluginNodeCapabilitySurfaces(
+              getPluginNodeCapabilities(),
+            );
+            for (const client of clients) {
+              reconcileClientPluginNodeCapabilities(client, nodeCapabilitySurfaces);
+            }
             await refreshAttachedGatewayDiscovery(loaded.pluginRegistry, startupPluginRuntimeClaim);
             return true;
           },
