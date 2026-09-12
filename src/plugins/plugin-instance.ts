@@ -32,7 +32,7 @@ export class PluginInstance {
   controlPlaneInitialized = false;
   sourceDigest?: string;
   private moduleLoader?: (source: string) => unknown;
-  private moduleSourceExists?: (source: string) => boolean;
+  private moduleSourceExists?: false | ((source: string) => boolean);
   private accepting = true;
   private readonly calls = new Map<object, PluginRegistry | undefined>();
   private readonly consumers = new Map<
@@ -330,7 +330,7 @@ export class PluginInstance {
   }
 
   hasModuleSource(source: string): boolean | undefined {
-    return this.moduleSourceExists?.(source);
+    return this.moduleSourceExists && this.moduleSourceExists(source);
   }
 
   quiesce(): boolean {
@@ -449,6 +449,8 @@ export class PluginInstance {
     this.calls.clear();
     this.waiters.forEach((wake) => wake());
     this.moduleLoader = undefined;
+    // Release captured paths without reopening the never-bound bundled-library fallback.
+    this.moduleSourceExists &&= false;
     this.slots.clear();
     if (failures.length) {
       log.warn(
