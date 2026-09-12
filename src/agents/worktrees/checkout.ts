@@ -276,9 +276,22 @@ export async function addManagedWorktree(options: CheckoutOptions): Promise<GitR
     await fs.writeFile(markerPath, marker);
     const sourceIndex = await indexPath(template.record.path, options);
     assertOwned(options);
-    await fs.copyFile(sourceIndex, destinationIndex, constants.COPYFILE_FICLONE);
-    // Snapshot backends preserve file identity. Git validates its own cached stat
-    // data; a future backend with different inode semantics still remains correct.
+    let copied = false;
+    if (template.backend.id === "apfs") {
+      const { copyApfsCloneIndex } = await import("./checkout-apfs.js");
+      copied = await copyApfsCloneIndex(
+        template.record.path,
+        options.destination,
+        sourceIndex,
+        destinationIndex,
+        options,
+      );
+    }
+    if (!copied) {
+      assertOwned(options);
+      await fs.copyFile(sourceIndex, destinationIndex, constants.COPYFILE_FICLONE);
+    }
+    // Git validates every remaining stat mismatch and retains normal edit detection.
     assertOwned(options);
     await requireGit(options.destination, ["update-index", "--refresh"], {
       ...gitOptions(options),
