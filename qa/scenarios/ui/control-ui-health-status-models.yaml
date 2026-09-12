@@ -12,7 +12,8 @@ scenario:
     snapshots and renders them as operator-visible diagnostics.
   successCriteria:
     - Real Chromium opens the Debug page through the Control UI shell.
-    - The browser requests status, health, last-heartbeat, and models.list with empty parameters.
+    - The browser requests status, health, and last-heartbeat with empty parameters.
+    - The browser requests models.list with agentId main and view default.
     - Status and security summary data render visibly.
     - Health, heartbeat, and model snapshot values render visibly.
   docsRefs:
