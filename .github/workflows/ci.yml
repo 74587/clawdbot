@@ -137,6 +137,7 @@ jobs:
       checks_node_core_nondist_matrix: ${{ steps.manifest.outputs.checks_node_core_nondist_matrix }}
       run_checks_node_core_dist: ${{ steps.manifest.outputs.run_checks_node_core_dist }}
       run_check: ${{ steps.manifest.outputs.run_check }}
+      startup_corpus_node_revision: ${{ steps.manifest.outputs.startup_corpus_node_revision }}
       changed_core_test_paths_json: ${{ steps.manifest.outputs.changed_core_test_paths_json }}
       run_check_additional: ${{ steps.manifest.outputs.run_check_additional }}
       check_additional_matrix: ${{ steps.manifest.outputs.check_additional_matrix }}
@@ -1706,6 +1707,15 @@ jobs:
             );
           }
           const nodeTestDistShards = nodeTestShards.filter((shard) => shard.requires_dist);
+          // The required Node matrix can own PR corpus coverage on this exact
+          // tree; frozen/release targets retain their independent corpus step.
+          const startupCorpusNodeRevision =
+            isCanonicalRepository && eventName === "pull_request" && runNodeFull &&
+            !frozenTarget && !compatibilityTarget && !releaseGate &&
+            /^[0-9a-f]{40}$/u.test(checkoutRevision) && checkoutRevision === workflowRevision &&
+            typeof nodeTestPlan.hasCompleteStartupCorpusCoverage === "function" &&
+            nodeTestPlan.hasCompleteStartupCorpusCoverage(rawNodeTestShards)
+              ? checkoutRevision : "";
           // Targeted jobs cannot discover repository-scanning boundary tests
           // through imports. Keep the full boundary gate inside build-artifacts
           // when that lane runs; test-only targeted plans carry their own
@@ -1784,6 +1794,7 @@ jobs:
             checks_node_core_nondist_matrix: createMatrix(nodeTestNonDistShards),
             run_checks_node_core_dist: runNodeCoreDist,
             run_check: runNodeFull,
+            startup_corpus_node_revision: startupCorpusNodeRevision,
             changed_core_test_paths_json: changedCoreTestPaths ? JSON.stringify(changedCoreTestPaths) : "",
             run_check_additional: runNodeFull,
             check_additional_matrix: createMatrix(runNodeFull ? additionalChecks : []),
@@ -3104,9 +3115,9 @@ jobs:
           esac
 
       - name: Check startup corpus
-        # Full main Node coverage owns these files on the same checkout. PRs may
-        # select only changed tests; release gates also validate a separate merge tree.
-        if: matrix.task == 'baseline-ratchets' && !(github.repository == 'openclaw/openclaw' && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.preflight.outputs.run_check == 'true')
+        # Main owns full coverage. PRs need an exact-tree coverage receipt from
+        # their admitted Node plan; release gates retain their separate merge tree.
+        if: matrix.task == 'baseline-ratchets' && !(github.repository == 'openclaw/openclaw' && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.preflight.outputs.run_check == 'true') && !(github.repository == 'openclaw/openclaw' && github.event_name == 'pull_request' && needs.preflight.outputs.startup_corpus_node_revision && needs.preflight.outputs.startup_corpus_node_revision == needs.preflight.outputs.checkout_revision)
         run: node scripts/run-vitest.mjs run --config test/vitest/vitest.runtime-config.config.ts src/config/config-startup-corpus.test.ts src/config/state-startup-corpus.test.ts
 
   qa-smoke-ci-profile:
